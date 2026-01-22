@@ -1,5 +1,6 @@
 # Environment variables
 .env
+.env.test
 
 # Dependencies
 node_modules/
@@ -13,3 +14,6 @@ dist/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Coverage
+coverage/

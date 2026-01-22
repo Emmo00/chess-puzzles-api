@@ -1,19 +1,9 @@
-import express from "express";
-import cors from "cors";
 import * as dotenv from "dotenv";
-import puzzlesRouter from "./routes/puzzles";
-
 dotenv.config();
 
-const app = express();
+import app from "./app";
+
 const PORT = parseInt(process.env.PORT || "3000", 10);
-
-// Middleware
-app.use(cors());
-app.use(express.json());
-
-// Routes
-app.use("/", puzzlesRouter);
 
 // Start server
 app.listen(PORT, () => {
