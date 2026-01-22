@@ -119,8 +119,8 @@ router.get("/", async (req: Request, res: Response) => {
     }
 
     // Randomize and limit results
-    query += " ORDER BY RAND() LIMIT ?";
-    params.push(puzzleCount);
+    // Note: LIMIT is interpolated directly since puzzleCount is already validated as an integer 1-100
+    query += ` ORDER BY RAND() LIMIT ${puzzleCount}`;
 
     const [rows] = await pool.execute<RowDataPacket[]>(query, params);
 
