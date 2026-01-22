@@ -159,17 +159,19 @@ function parseRow(row: PuzzleRow): {
   themes: ThemeData[];
 } {
   // Calculate player moves: player makes every other move starting from move 2 (index 1)
-  const movesList = row.Moves ? row.Moves.trim().split(/\s+/) : [];
+  const moves = row.Moves || "";
+  const movesList = moves.trim() ? moves.trim().split(/\s+/) : [];
   const playerMoves = Math.floor(movesList.length / 2);
 
+  // Ensure all values are defined (not undefined) - use empty string or 0 as fallbacks
   const puzzle: PuzzleData = {
-    puzzle_id: row.PuzzleId,
-    fen: row.FEN,
-    moves: row.Moves,
-    rating: parseInt(row.Rating, 10),
-    rating_deviation: parseInt(row.RatingDeviation, 10),
-    popularity: parseInt(row.Popularity, 10),
-    nb_plays: parseInt(row.NbPlays, 10),
+    puzzle_id: row.PuzzleId || "",
+    fen: row.FEN || "",
+    moves: moves,
+    rating: parseInt(row.Rating, 10) || 0,
+    rating_deviation: parseInt(row.RatingDeviation, 10) || 0,
+    popularity: parseInt(row.Popularity, 10) || 0,
+    nb_plays: parseInt(row.NbPlays, 10) || 0,
     themes: row.Themes || "",
     game_url: row.GameUrl || "",
     opening_tags: row.OpeningTags || "",
