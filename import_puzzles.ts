@@ -51,7 +51,8 @@ CREATE TABLE IF NOT EXISTS puzzle_themes (
 `;
 
 // Batch size for inserts
-const BATCH_SIZE = 5000;
+const BATCH_SIZE = 1000;
+const THEME_BATCH_SIZE = 5000;
 const PROGRESS_INTERVAL = 50000;
 
 interface PuzzleRow {
@@ -134,7 +135,7 @@ async function insertPuzzlesBatch(
     VALUES ${placeholders}
   `;
 
-  await pool.execute(sql, values);
+  await pool.query(sql, values);
 }
 
 async function insertThemesBatch(
@@ -143,15 +144,19 @@ async function insertThemesBatch(
 ): Promise<void> {
   if (themes.length === 0) return;
 
-  const placeholders = themes.map(() => "(?, ?)").join(", ");
-  const values = themes.flatMap((t) => [t.puzzle_id, t.theme]);
+  // Insert themes in smaller chunks to avoid max_allowed_packet issues
+  for (let i = 0; i < themes.length; i += THEME_BATCH_SIZE) {
+    const chunk = themes.slice(i, i + THEME_BATCH_SIZE);
+    const placeholders = chunk.map(() => "(?, ?)").join(", ");
+    const values = chunk.flatMap((t) => [t.puzzle_id, t.theme]);
 
-  const sql = `
-    INSERT IGNORE INTO puzzle_themes (puzzle_id, theme)
-    VALUES ${placeholders}
-  `;
+    const sql = `
+      INSERT IGNORE INTO puzzle_themes (puzzle_id, theme)
+      VALUES ${placeholders}
+    `;
 
-  await pool.execute(sql, values);
+    await pool.query(sql, values);
+  }
 }
 
 function parseRow(row: PuzzleRow): {
