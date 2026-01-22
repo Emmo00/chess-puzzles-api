@@ -130,7 +130,7 @@ async function insertPuzzlesBatch(
   ]);
 
   const sql = `
-    INSERT INTO puzzles (puzzle_id, fen, moves, rating, rating_deviation, popularity, nb_plays, themes, game_url, opening_tags, player_moves)
+    INSERT IGNORE INTO puzzles (puzzle_id, fen, moves, rating, rating_deviation, popularity, nb_plays, themes, game_url, opening_tags, player_moves)
     VALUES ${placeholders}
   `;
 
@@ -147,7 +147,7 @@ async function insertThemesBatch(
   const values = themes.flatMap((t) => [t.puzzle_id, t.theme]);
 
   const sql = `
-    INSERT INTO puzzle_themes (puzzle_id, theme)
+    INSERT IGNORE INTO puzzle_themes (puzzle_id, theme)
     VALUES ${placeholders}
   `;
 
