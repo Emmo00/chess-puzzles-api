@@ -114,7 +114,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
           script: |
-            cd /var/www/app/chess-puzzle-api
+            cd /var/www/app/chess-puzzles-api
             git pull
             bun install
             pm2 restart chess-puzzle-api
