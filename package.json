@@ -4,8 +4,8 @@
   "description": "Chess puzzles API",
   "main": "src/index.ts",
   "scripts": {
-    "import": "ts-node import_puzzles.ts",
-    "start": "ts-node src/index.ts",
+    "import": "bun run import_puzzles.ts",
+    "start": "bun run src/index.ts",
     "test": "jest",
     "test:coverage": "jest --coverage"
   },
