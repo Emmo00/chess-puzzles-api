@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import pool from "../db";
 import { Puzzle, PuzzleRow, PuzzleResponse } from "../types";
 import { RowDataPacket } from "mysql2";
+import logger from "../logger";
 
 const router = Router();
 
@@ -130,7 +131,7 @@ router.get("/", async (req: Request, res: Response) => {
 
     return res.json(response);
   } catch (error) {
-    console.error("Error fetching puzzles:", error);
+    logger.error(error, "Error fetching puzzles");
     return res.status(500).json({ error: "Internal server error" });
   }
 });
