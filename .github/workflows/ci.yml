@@ -113,7 +113,17 @@ jobs:
           username: ${{ secrets.SSH_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
+            # source profile to load path
+            source ~/.bashrc
+
+            # go to app directory and pull latest changes
             cd /var/www/app/chess-puzzles-api
+
+            # pull latest changes
             git pull
+
+            # install dependencies
             bun install
-            pm2 restart chess-puzzle-api
+
+            # restart process
+            pm2 restart chess-puzzles-api
