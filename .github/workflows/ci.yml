@@ -114,7 +114,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             # source profile to load path
-            source ~/.bashrc
+            source ~/.bashrc || source ~/.profile || source ~/.bash_profile || true
 
             # go to app directory and pull latest changes
             cd /var/www/app/chess-puzzles-api
