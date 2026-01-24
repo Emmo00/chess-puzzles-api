@@ -3,9 +3,43 @@ import app from "../app";
 import { mockPuzzles } from "./setup";
 
 describe("Chess Puzzles API", () => {
+  const apiKey = "test-api-key";
+
+  describe("Authentication", () => {
+    it("should return 401 when no API key is provided", async () => {
+      const response = await request(app).get("/?count=10");
+      expect(response.status).toBe(401);
+      expect(response.body.error).toContain("API key required");
+    });
+
+    it("should return 403 when invalid API key is provided", async () => {
+      const response = await request(app)
+        .get("/?count=10")
+        .set("x-api-key", "invalid-key");
+      expect(response.status).toBe(403);
+      expect(response.body.error).toContain("Invalid API key");
+    });
+
+    it("should accept API key in x-api-key header", async () => {
+      const response = await request(app)
+        .get("/?count=1")
+        .set("x-api-key", apiKey);
+      expect(response.status).toBe(200);
+    });
+
+    it("should accept API key in Authorization header", async () => {
+      const response = await request(app)
+        .get("/?count=1")
+        .set("Authorization", `Bearer ${apiKey}`);
+      expect(response.status).toBe(200);
+    });
+  });
+
   describe("GET / - Puzzle by ID", () => {
     it("should return a single puzzle when valid id is provided", async () => {
-      const response = await request(app).get("/?id=TEST001");
+      const response = await request(app)
+        .get("/?id=TEST001")
+        .set("x-api-key", apiKey);
 
       expect(response.status).toBe(200);
       expect(response.body).toHaveProperty("puzzles");
@@ -14,7 +48,9 @@ describe("Chess Puzzles API", () => {
     });
 
     it("should return 400 when puzzle id does not exist", async () => {
-      const response = await request(app).get("/?id=INVALID_ID");
+      const response = await request(app)
+        .get("/?id=INVALID_ID")
+        .set("x-api-key", apiKey);
 
       expect(response.status).toBe(400);
       expect(response.body).toHaveProperty("error");
@@ -22,7 +58,9 @@ describe("Chess Puzzles API", () => {
     });
 
     it("should return correct puzzle structure", async () => {
-      const response = await request(app).get("/?id=TEST001");
+      const response = await request(app)
+        .get("/?id=TEST001")
+        .set("x-api-key", apiKey);
 
       const puzzle = response.body.puzzles[0];
       expect(puzzle).toHaveProperty("puzzleid");
@@ -36,7 +74,9 @@ describe("Chess Puzzles API", () => {
     });
 
     it("should return moves as an array", async () => {
-      const response = await request(app).get("/?id=TEST001");
+      const response = await request(app)
+        .get("/?id=TEST001")
+        .set("x-api-key", apiKey);
 
       const puzzle = response.body.puzzles[0];
       expect(Array.isArray(puzzle.moves)).toBe(true);
@@ -44,7 +84,9 @@ describe("Chess Puzzles API", () => {
     });
 
     it("should return themes as an array", async () => {
-      const response = await request(app).get("/?id=TEST001");
+      const response = await request(app)
+        .get("/?id=TEST001")
+        .set("x-api-key", apiKey);
 
       const puzzle = response.body.puzzles[0];
       expect(Array.isArray(puzzle.themes)).toBe(true);
@@ -53,7 +95,9 @@ describe("Chess Puzzles API", () => {
     });
 
     it("should return opening tags as an array", async () => {
-      const response = await request(app).get("/?id=TEST004");
+      const response = await request(app)
+        .get("/?id=TEST004")
+        .set("x-api-key", apiKey);
 
       const puzzle = response.body.puzzles[0];
       expect(Array.isArray(puzzle["opening tags"])).toBe(true);
@@ -61,9 +105,9 @@ describe("Chess Puzzles API", () => {
     });
 
     it("should override all other parameters when id is provided", async () => {
-      const response = await request(app).get(
-        '/?id=TEST001&count=10&rating=2000&themes=["endgame"]'
-      );
+      const response = await request(app)
+        .get('/?id=TEST001&count=10&rating=2000&themes=["endgame"]')
+        .set("x-api-key", apiKey);
 
       expect(response.status).toBe(200);
       expect(response.body.puzzles).toHaveLength(1);
@@ -73,7 +117,9 @@ describe("Chess Puzzles API", () => {
 
   describe("GET / - Count parameter", () => {
     it("should return 400 when neither id nor count is provided", async () => {
-      const response = await request(app).get("/");
+      const response = await request(app)
+        .get("/")
+        .set("x-api-key", apiKey);
 
       expect(response.status).toBe(400);
       expect(response.body).toHaveProperty("error");
@@ -82,21 +128,27 @@ describe("Chess Puzzles API", () => {
     });
 
     it("should return the requested number of puzzles", async () => {
-      const response = await request(app).get("/?count=5");
+      const response = await request(app)
+        .get("/?count=5")
+        .set("x-api-key", apiKey);
 
       expect(response.status).toBe(200);
       expect(response.body.puzzles).toHaveLength(5);
     });
 
     it("should clamp count to 1 when count is 0", async () => {
-      const response = await request(app).get("/?count=0");
+      const response = await request(app)
+        .get("/?count=0")
+        .set("x-api-key", apiKey);
 
       expect(response.status).toBe(200);
       expect(response.body.puzzles).toHaveLength(1);
     });
 
     it("should clamp count to 1 when count is negative", async () => {
-      const response = await request(app).get("/?count=-5");
+      const response = await request(app)
+        .get("/?count=-5")
+        .set("x-api-key", apiKey);
 
       expect(response.status).toBe(200);
       expect(response.body.puzzles).toHaveLength(1);
@@ -104,7 +156,9 @@ describe("Chess Puzzles API", () => {
 
     it("should clamp count to 100 when count exceeds 100", async () => {
       // Since we only have 20 test puzzles, we can only verify clamping happens
-      const response = await request(app).get("/?count=150");
+      const response = await request(app)
+        .get("/?count=150")
+        .set("x-api-key", apiKey);
 
       expect(response.status).toBe(200);
       // Should return all available puzzles (20) since limit is clamped to 100
@@ -113,8 +167,12 @@ describe("Chess Puzzles API", () => {
 
     it("should return randomized puzzles", async () => {
       // Get two sets of puzzles and verify they might be different
-      const response1 = await request(app).get("/?count=10");
-      const response2 = await request(app).get("/?count=10");
+      const response1 = await request(app)
+        .get("/?count=10")
+        .set("x-api-key", apiKey);
+      const response2 = await request(app)
+        .get("/?count=10")
+        .set("x-api-key", apiKey);
 
       expect(response1.status).toBe(200);
       expect(response2.status).toBe(200);
@@ -127,7 +185,9 @@ describe("Chess Puzzles API", () => {
 
   describe("GET / - Rating filter", () => {
     it("should return puzzles within rating range", async () => {
-      const response = await request(app).get("/?count=20&rating=1500");
+      const response = await request(app)
+        .get("/?count=20&rating=1500")
+        .set("x-api-key", apiKey);
 
       expect(response.status).toBe(200);
 
@@ -141,21 +201,27 @@ describe("Chess Puzzles API", () => {
     });
 
     it("should return puzzles for low rating", async () => {
-      const response = await request(app).get("/?count=20&rating=800");
+      const response = await request(app)
+        .get("/?count=20&rating=800")
+        .set("x-api-key", apiKey);
 
       expect(response.status).toBe(200);
       expect(response.body.puzzles.length).toBeGreaterThan(0);
     });
 
     it("should return puzzles for high rating", async () => {
-      const response = await request(app).get("/?count=20&rating=2200");
+      const response = await request(app)
+        .get("/?count=20&rating=2200")
+        .set("x-api-key", apiKey);
 
       expect(response.status).toBe(200);
       expect(response.body.puzzles.length).toBeGreaterThan(0);
     });
 
     it("should return empty array when no puzzles match extreme rating", async () => {
-      const response = await request(app).get("/?count=20&rating=5000");
+      const response = await request(app)
+        .get("/?count=20&rating=5000")
+        .set("x-api-key", apiKey);
 
       expect(response.status).toBe(200);
       expect(response.body.puzzles).toHaveLength(0);
@@ -164,7 +230,9 @@ describe("Chess Puzzles API", () => {
 
   describe("GET / - Single theme filter", () => {
     it("should return puzzles with the specified theme", async () => {
-      const response = await request(app).get('/?count=20&themes=["fork"]');
+      const response = await request(app)
+        .get('/?count=20&themes=["fork"]')
+        .set("x-api-key", apiKey);
 
       expect(response.status).toBe(200);
       expect(response.body.puzzles.length).toBeGreaterThan(0);
@@ -175,7 +243,9 @@ describe("Chess Puzzles API", () => {
     });
 
     it("should return puzzles with endgame theme", async () => {
-      const response = await request(app).get('/?count=20&themes=["endgame"]');
+      const response = await request(app)
+        .get('/?count=20&themes=["endgame"]')
+        .set("x-api-key", apiKey);
 
       expect(response.status).toBe(200);
       expect(response.body.puzzles.length).toBeGreaterThan(0);
@@ -186,7 +256,9 @@ describe("Chess Puzzles API", () => {
     });
 
     it("should return puzzles with pin theme", async () => {
-      const response = await request(app).get('/?count=20&themes=["pin"]');
+      const response = await request(app)
+        .get('/?count=20&themes=["pin"]')
+        .set("x-api-key", apiKey);
 
       expect(response.status).toBe(200);
       expect(response.body.puzzles.length).toBeGreaterThan(0);
@@ -197,9 +269,9 @@ describe("Chess Puzzles API", () => {
     });
 
     it("should return empty array when theme does not exist", async () => {
-      const response = await request(app).get(
-        '/?count=20&themes=["nonexistenttheme"]'
-      );
+      const response = await request(app)
+        .get('/?count=20&themes=["nonexistenttheme"]')
+        .set("x-api-key", apiKey);
 
       expect(response.status).toBe(200);
       expect(response.body.puzzles).toHaveLength(0);
@@ -208,18 +280,18 @@ describe("Chess Puzzles API", () => {
 
   describe("GET / - Multiple themes with themesType", () => {
     it("should return 400 when multiple themes provided without themesType", async () => {
-      const response = await request(app).get(
-        '/?count=10&themes=["fork","endgame"]'
-      );
+      const response = await request(app)
+        .get('/?count=10&themes=["fork","endgame"]')
+        .set("x-api-key", apiKey);
 
       expect(response.status).toBe(400);
       expect(response.body.error).toContain("themesType");
     });
 
     it("should return puzzles with ANY theme when themesType=ONE", async () => {
-      const response = await request(app).get(
-        '/?count=20&themes=["fork","endgame"]&themesType=ONE'
-      );
+      const response = await request(app)
+        .get('/?count=20&themes=["fork","endgame"]&themesType=ONE')
+        .set("x-api-key", apiKey);
 
       expect(response.status).toBe(200);
       expect(response.body.puzzles.length).toBeGreaterThan(0);
@@ -232,9 +304,9 @@ describe("Chess Puzzles API", () => {
     });
 
     it("should return puzzles with ALL themes when themesType=ALL", async () => {
-      const response = await request(app).get(
-        '/?count=20&themes=["fork","middlegame"]&themesType=ALL'
-      );
+      const response = await request(app)
+        .get('/?count=20&themes=["fork","middlegame"]&themesType=ALL')
+        .set("x-api-key", apiKey);
 
       expect(response.status).toBe(200);
       expect(response.body.puzzles.length).toBeGreaterThan(0);
@@ -246,9 +318,9 @@ describe("Chess Puzzles API", () => {
     });
 
     it("should return puzzles with three themes when themesType=ALL", async () => {
-      const response = await request(app).get(
-        '/?count=20&themes=["pin","middlegame","advantage"]&themesType=ALL'
-      );
+      const response = await request(app)
+        .get('/?count=20&themes=["pin","middlegame","advantage"]&themesType=ALL')
+        .set("x-api-key", apiKey);
 
       expect(response.status).toBe(200);
 
@@ -260,9 +332,9 @@ describe("Chess Puzzles API", () => {
     });
 
     it("should return empty when no puzzle has all required themes", async () => {
-      const response = await request(app).get(
-        '/?count=20&themes=["fork","pawnEndgame","mateIn1"]&themesType=ALL'
-      );
+      const response = await request(app)
+        .get('/?count=20&themes=["fork","pawnEndgame","mateIn1"]&themesType=ALL')
+        .set("x-api-key", apiKey);
 
       expect(response.status).toBe(200);
       expect(response.body.puzzles).toHaveLength(0);
@@ -271,23 +343,27 @@ describe("Chess Puzzles API", () => {
 
   describe("GET / - Theme validation errors", () => {
     it("should return 400 for invalid JSON in themes", async () => {
-      const response = await request(app).get("/?count=10&themes=notjson");
+      const response = await request(app)
+        .get("/?count=10&themes=notjson")
+        .set("x-api-key", apiKey);
 
       expect(response.status).toBe(400);
       expect(response.body.error).toContain("Invalid themes format");
     });
 
     it("should return 400 when themes is not an array", async () => {
-      const response = await request(app).get('/?count=10&themes="fork"');
+      const response = await request(app)
+        .get('/?count=10&themes="fork"')
+        .set("x-api-key", apiKey);
 
       expect(response.status).toBe(400);
       expect(response.body.error).toContain("array");
     });
 
     it("should return 400 when themes is an object", async () => {
-      const response = await request(app).get(
-        '/?count=10&themes={"theme":"fork"}'
-      );
+      const response = await request(app)
+        .get('/?count=10&themes={"theme":"fork"}')
+        .set("x-api-key", apiKey);
 
       expect(response.status).toBe(400);
       expect(response.body.error).toContain("array");
@@ -296,7 +372,9 @@ describe("Chess Puzzles API", () => {
 
   describe("GET / - Player moves filter", () => {
     it("should return puzzles with specified player moves", async () => {
-      const response = await request(app).get("/?count=20&playerMoves=2");
+      const response = await request(app)
+        .get("/?count=20&playerMoves=2")
+        .set("x-api-key", apiKey);
 
       expect(response.status).toBe(200);
       expect(response.body.puzzles.length).toBeGreaterThan(0);
@@ -312,21 +390,27 @@ describe("Chess Puzzles API", () => {
     });
 
     it("should return puzzles with 1 player move", async () => {
-      const response = await request(app).get("/?count=20&playerMoves=1");
+      const response = await request(app)
+        .get("/?count=20&playerMoves=1")
+        .set("x-api-key", apiKey);
 
       expect(response.status).toBe(200);
       expect(response.body.puzzles.length).toBeGreaterThan(0);
     });
 
     it("should return puzzles with 4 player moves", async () => {
-      const response = await request(app).get("/?count=20&playerMoves=4");
+      const response = await request(app)
+        .get("/?count=20&playerMoves=4")
+        .set("x-api-key", apiKey);
 
       expect(response.status).toBe(200);
       expect(response.body.puzzles.length).toBeGreaterThan(0);
     });
 
     it("should return empty when no puzzles have that many moves", async () => {
-      const response = await request(app).get("/?count=20&playerMoves=10");
+      const response = await request(app)
+        .get("/?count=20&playerMoves=10")
+        .set("x-api-key", apiKey);
 
       expect(response.status).toBe(200);
       expect(response.body.puzzles).toHaveLength(0);
@@ -335,9 +419,9 @@ describe("Chess Puzzles API", () => {
 
   describe("GET / - Combined filters", () => {
     it("should filter by rating and theme together", async () => {
-      const response = await request(app).get(
-        '/?count=20&rating=1500&themes=["middlegame"]'
-      );
+      const response = await request(app)
+        .get('/?count=20&rating=1500&themes=["middlegame"]')
+        .set("x-api-key", apiKey);
 
       expect(response.status).toBe(200);
 
@@ -351,9 +435,9 @@ describe("Chess Puzzles API", () => {
     });
 
     it("should filter by rating and playerMoves together", async () => {
-      const response = await request(app).get(
-        "/?count=20&rating=1500&playerMoves=2"
-      );
+      const response = await request(app)
+        .get("/?count=20&rating=1500&playerMoves=2")
+        .set("x-api-key", apiKey);
 
       expect(response.status).toBe(200);
 
@@ -367,9 +451,9 @@ describe("Chess Puzzles API", () => {
     });
 
     it("should filter by theme and playerMoves together", async () => {
-      const response = await request(app).get(
-        '/?count=20&themes=["fork"]&playerMoves=2'
-      );
+      const response = await request(app)
+        .get('/?count=20&themes=["fork"]&playerMoves=2')
+        .set("x-api-key", apiKey);
 
       expect(response.status).toBe(200);
 
@@ -379,9 +463,9 @@ describe("Chess Puzzles API", () => {
     });
 
     it("should filter by rating, themes, and playerMoves together", async () => {
-      const response = await request(app).get(
-        '/?count=20&rating=1400&themes=["middlegame"]&playerMoves=2'
-      );
+      const response = await request(app)
+        .get('/?count=20&rating=1400&themes=["middlegame"]&playerMoves=2')
+        .set("x-api-key", apiKey);
 
       expect(response.status).toBe(200);
 
@@ -391,9 +475,9 @@ describe("Chess Puzzles API", () => {
     });
 
     it("should filter by multiple themes with themesType and rating", async () => {
-      const response = await request(app).get(
-        '/?count=20&rating=1600&themes=["pin","advantage"]&themesType=ALL'
-      );
+      const response = await request(app)
+        .get('/?count=20&rating=1600&themes=["pin","advantage"]&themesType=ALL')
+        .set("x-api-key", apiKey);
 
       expect(response.status).toBe(200);
 
@@ -406,7 +490,9 @@ describe("Chess Puzzles API", () => {
 
   describe("GET / - Response format validation", () => {
     it("should always return puzzles array even when empty", async () => {
-      const response = await request(app).get("/?count=10&rating=9999");
+      const response = await request(app)
+        .get("/?count=10&rating=9999")
+        .set("x-api-key", apiKey);
 
       expect(response.status).toBe(200);
       expect(response.body).toHaveProperty("puzzles");
@@ -414,7 +500,9 @@ describe("Chess Puzzles API", () => {
     });
 
     it("should return empty opening tags array when no tags", async () => {
-      const response = await request(app).get("/?id=TEST013");
+      const response = await request(app)
+        .get("/?id=TEST013")
+        .set("x-api-key", apiKey);
 
       expect(response.status).toBe(200);
       const puzzle = response.body.puzzles[0];
@@ -423,7 +511,9 @@ describe("Chess Puzzles API", () => {
     });
 
     it("should return multiple opening tags as array", async () => {
-      const response = await request(app).get("/?id=TEST011");
+      const response = await request(app)
+        .get("/?id=TEST011")
+        .set("x-api-key", apiKey);
 
       expect(response.status).toBe(200);
       const puzzle = response.body.puzzles[0];
@@ -432,7 +522,9 @@ describe("Chess Puzzles API", () => {
     });
 
     it("should handle puzzle with zero player moves", async () => {
-      const response = await request(app).get("/?id=TEST014");
+      const response = await request(app)
+        .get("/?id=TEST014")
+        .set("x-api-key", apiKey);
 
       expect(response.status).toBe(200);
       expect(response.body.puzzles[0].moves).toHaveLength(1);
@@ -441,33 +533,43 @@ describe("Chess Puzzles API", () => {
 
   describe("GET / - Edge cases", () => {
     it("should handle empty themes array", async () => {
-      const response = await request(app).get("/?count=10&themes=[]");
+      const response = await request(app)
+        .get("/?count=10&themes=[]")
+        .set("x-api-key", apiKey);
 
       expect(response.status).toBe(200);
       expect(response.body.puzzles.length).toBeGreaterThan(0);
     });
 
     it("should handle rating as string", async () => {
-      const response = await request(app).get("/?count=10&rating=1500");
+      const response = await request(app)
+        .get("/?count=10&rating=1500")
+        .set("x-api-key", apiKey);
 
       expect(response.status).toBe(200);
     });
 
     it("should handle playerMoves as string", async () => {
-      const response = await request(app).get("/?count=10&playerMoves=2");
+      const response = await request(app)
+        .get("/?count=10&playerMoves=2")
+        .set("x-api-key", apiKey);
 
       expect(response.status).toBe(200);
     });
 
     it("should handle count as string", async () => {
-      const response = await request(app).get("/?count=5");
+      const response = await request(app)
+        .get("/?count=5")
+        .set("x-api-key", apiKey);
 
       expect(response.status).toBe(200);
       expect(response.body.puzzles).toHaveLength(5);
     });
 
     it("should handle invalid rating gracefully", async () => {
-      const response = await request(app).get("/?count=10&rating=invalid");
+      const response = await request(app)
+        .get("/?count=10&rating=invalid")
+        .set("x-api-key", apiKey);
 
       expect(response.status).toBe(200);
       // Should return puzzles without rating filter applied
@@ -475,7 +577,9 @@ describe("Chess Puzzles API", () => {
     });
 
     it("should handle invalid playerMoves gracefully", async () => {
-      const response = await request(app).get("/?count=10&playerMoves=invalid");
+      const response = await request(app)
+        .get("/?count=10&playerMoves=invalid")
+        .set("x-api-key", apiKey);
 
       expect(response.status).toBe(200);
       // Should return puzzles without playerMoves filter applied

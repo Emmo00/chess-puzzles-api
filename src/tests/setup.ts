@@ -323,13 +323,35 @@ async function createTables() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `;
 
+  const createApiKeysTable = `
+    CREATE TABLE IF NOT EXISTS api_keys (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      api_key VARCHAR(255) UNIQUE NOT NULL,
+      description VARCHAR(255),
+      is_active BOOLEAN DEFAULT TRUE,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      last_used_at TIMESTAMP NULL,
+      created_by VARCHAR(100),
+      INDEX idx_api_key (api_key),
+      INDEX idx_is_active (is_active)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `;
+
   await pool.execute("DROP TABLE IF EXISTS puzzle_themes");
   await pool.execute("DROP TABLE IF EXISTS puzzles");
+  await pool.execute("DROP TABLE IF EXISTS api_keys");
+  await pool.execute(createApiKeysTable);
   await pool.execute(createPuzzlesTable);
   await pool.execute(createPuzzleThemesTable);
 }
 
 async function seedData() {
+  // Insert test API key
+  await pool.execute(
+    "INSERT INTO api_keys (api_key, description) VALUES (?, ?)",
+    ["test-api-key", "Test API Key"]
+  );
+
   // Insert puzzles
   for (const puzzle of mockPuzzles) {
     await pool.execute(
@@ -364,6 +386,7 @@ async function seedData() {
 async function cleanupTables() {
   await pool.execute("DROP TABLE IF EXISTS puzzle_themes");
   await pool.execute("DROP TABLE IF EXISTS puzzles");
+  await pool.execute("DROP TABLE IF EXISTS api_keys");
 }
 
 // Global setup - runs once before all tests
