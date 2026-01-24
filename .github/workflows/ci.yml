@@ -113,8 +113,7 @@ jobs:
           username: ${{ secrets.SSH_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            # source profile to load path
-            source ~/.bashrc || source ~/.profile || source ~/.bash_profile || true
+            export PATH=$PATH:/root/.bun/bin:/root/.nvm/versions/node/v22.19.0/bin
 
             # go to app directory and pull latest changes
             cd /var/www/app/chess-puzzles-api
