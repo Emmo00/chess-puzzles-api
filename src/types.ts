@@ -26,3 +26,10 @@ export interface PuzzleRow {
   opening_tags: string;
   player_moves: number;
 }
+
+export interface AuthConfig {
+  apiKey: string;
+  description?: string;
+  createdAt?: Date;
+  isActive?: boolean;
+}

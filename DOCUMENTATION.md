@@ -8,7 +8,19 @@ https://your-api-domain.com
 
 ## Authentication
 
-No authentication required.
+All requests require an API key to be passed in the request headers. You can provide the API key in one of two ways:
+
+1. **Using `x-api-key` header:**
+   ```
+   x-api-key: your-api-key
+   ```
+
+2. **Using `Authorization` header with Bearer token:**
+   ```
+   Authorization: Bearer your-api-key
+   ```
+
+Contact your API administrator to obtain a valid API key. API keys must be whitelisted before use.
 
 ---
 
@@ -64,8 +76,17 @@ Retrieve chess puzzles with optional filtering.
 GET /puzzles?id=00008
 ```
 
+With API key header:
+```bash
+curl -H "x-api-key: your-api-key" https://your-api-domain.com/puzzles?id=00008
+```
+
 ```javascript
-fetch('https://your-api-domain.com/puzzles?id=00008')
+fetch('https://your-api-domain.com/puzzles?id=00008', {
+  headers: {
+    'x-api-key': 'your-api-key'
+  }
+})
   .then(res => res.json())
   .then(data => console.log(data));
 ```
@@ -98,7 +119,11 @@ GET /puzzles?count=10
 ```
 
 ```javascript
-fetch('https://your-api-domain.com/puzzles?count=10')
+fetch('https://your-api-domain.com/puzzles?count=10', {
+  headers: {
+    'x-api-key': 'your-api-key'
+  }
+})
   .then(res => res.json())
   .then(data => console.log(data));
 ```
@@ -132,7 +157,11 @@ GET /puzzles?count=5&rating=1500-1800
 ```
 
 ```javascript
-fetch('https://your-api-domain.com/puzzles?count=5&rating=1500-1800')
+fetch('https://your-api-domain.com/puzzles?count=5&rating=1500-1800', {
+  headers: {
+    'x-api-key': 'your-api-key'
+  }
+})
   .then(res => res.json())
   .then(data => console.log(data));
 ```
@@ -151,7 +180,11 @@ GET /puzzles?count=10&themes=["fork","pin"]&themesType=ANY
 
 ```javascript
 const themes = JSON.stringify(['fork', 'pin']);
-fetch(`https://your-api-domain.com/puzzles?count=10&themes=${encodeURIComponent(themes)}&themesType=ANY`)
+fetch(`https://your-api-domain.com/puzzles?count=10&themes=${encodeURIComponent(themes)}&themesType=ANY`, {
+  headers: {
+    'x-api-key': 'your-api-key'
+  }
+})
   .then(res => res.json())
   .then(data => console.log(data));
 ```
@@ -170,7 +203,11 @@ GET /puzzles?count=10&themes=["fork","pin"]&themesType=ALL
 
 ```javascript
 const themes = JSON.stringify(['fork', 'pin']);
-fetch(`https://your-api-domain.com/puzzles?count=10&themes=${encodeURIComponent(themes)}&themesType=ALL`)
+fetch(`https://your-api-domain.com/puzzles?count=10&themes=${encodeURIComponent(themes)}&themesType=ALL`, {
+  headers: {
+    'x-api-key': 'your-api-key'
+  }
+})
   .then(res => res.json())
   .then(data => console.log(data));
 ```
@@ -188,7 +225,11 @@ GET /puzzles?count=10&playerMoves=3
 ```
 
 ```javascript
-fetch('https://your-api-domain.com/puzzles?count=10&playerMoves=3')
+fetch('https://your-api-domain.com/puzzles?count=10&playerMoves=3', {
+  headers: {
+    'x-api-key': 'your-api-key'
+  }
+})
   .then(res => res.json())
   .then(data => console.log(data));
 ```
@@ -214,7 +255,11 @@ const params = new URLSearchParams({
   playerMoves: '2-4'
 });
 
-fetch(`https://your-api-domain.com/puzzles?${params}`)
+fetch(`https://your-api-domain.com/puzzles?${params}`, {
+  headers: {
+    'x-api-key': 'your-api-key'
+  }
+})
   .then(res => res.json())
   .then(data => console.log(data));
 ```
@@ -255,6 +300,38 @@ Common themes include:
 ---
 
 ## Error Responses
+
+### Missing API Key
+
+**Request:**
+```bash
+GET /puzzles?count=10
+```
+
+**Response:** `401 Unauthorized`
+```json
+{
+  "error": "Unauthorized. API key required in 'x-api-key' header or 'Authorization: Bearer <key>' header"
+}
+```
+
+---
+
+### Invalid API Key
+
+**Request:**
+```bash
+GET /puzzles?count=10 -H "x-api-key: invalid-key"
+```
+
+**Response:** `403 Forbidden`
+```json
+{
+  "error": "Forbidden. Invalid API key"
+}
+```
+
+---
 
 ### Missing Required Parameters
 
@@ -370,12 +447,16 @@ interface PuzzlesResponse {
   puzzles: Puzzle[];
 }
 
-async function fetchPuzzles(count: number, filters?: {
-  rating?: string;
-  themes?: string[];
-  themesType?: 'ANY' | 'ALL';
-  playerMoves?: string;
-}): Promise<Puzzle[]> {
+async function fetchPuzzles(
+  apiKey: string,
+  count: number, 
+  filters?: {
+    rating?: string;
+    themes?: string[];
+    themesType?: 'ANY' | 'ALL';
+    playerMoves?: string;
+  }
+): Promise<Puzzle[]> {
   const params = new URLSearchParams({ count: count.toString() });
   
   if (filters?.rating) params.append('rating', filters.rating);
@@ -385,7 +466,11 @@ async function fetchPuzzles(count: number, filters?: {
   }
   if (filters?.playerMoves) params.append('playerMoves', filters.playerMoves);
   
-  const response = await fetch(`https://your-api-domain.com/puzzles?${params}`);
+  const response = await fetch(`https://your-api-domain.com/puzzles?${params}`, {
+    headers: {
+      'x-api-key': apiKey
+    }
+  });
   
   if (!response.ok) {
     const error = await response.json();
@@ -397,12 +482,13 @@ async function fetchPuzzles(count: number, filters?: {
 }
 
 // Usage examples
-const easyPuzzles = await fetchPuzzles(10, { rating: '800-1200' });
-const tacticPuzzles = await fetchPuzzles(5, { 
+const apiKey = 'your-api-key';
+const easyPuzzles = await fetchPuzzles(apiKey, 10, { rating: '800-1200' });
+const tacticPuzzles = await fetchPuzzles(apiKey, 5, { 
   themes: ['fork', 'pin'], 
   themesType: 'ANY' 
 });
-const specificPuzzle = await fetchPuzzles(1, { /* fetches 1 random puzzle */ });
+const specificPuzzle = await fetchPuzzles(apiKey, 1);
 ```
 
 ---

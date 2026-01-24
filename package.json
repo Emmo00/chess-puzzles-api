@@ -4,6 +4,7 @@
   "description": "Chess puzzles API",
   "main": "src/index.ts",
   "scripts": {
+    "init-db": "bun run init_db.ts",
     "import": "bun run import_puzzles.ts",
     "start": "bun run src/index.ts",
     "test": "jest",
