@@ -15,9 +15,7 @@ function transformPuzzle(row: PuzzleRow): Puzzle {
     ratingdeviation: row.rating_deviation,
     popularity: row.popularity,
     themes: row.themes ? row.themes.trim().split(/\s+/).filter(Boolean) : [],
-    "opening tags": row.opening_tags
-      ? row.opening_tags.trim().split(/\s+/).filter(Boolean)
-      : [],
+    "opening tags": row.opening_tags ? row.opening_tags.trim().split(/\s+/).filter(Boolean) : [],
   };
 }
 
@@ -27,10 +25,7 @@ router.get("/", async (req: Request, res: Response) => {
 
     // If id is provided, return single puzzle (overrides all other params)
     if (id) {
-      const [rows] = await pool.execute<RowDataPacket[]>(
-        "SELECT * FROM puzzles WHERE puzzle_id = ?",
-        [id]
-      );
+      const [rows] = await pool.execute<RowDataPacket[]>("SELECT * FROM puzzles WHERE puzzle_id = ?", [id]);
 
       if (rows.length === 0) {
         return res.status(400).json({ error: "Puzzle not found with the provided id" });
