@@ -6,18 +6,16 @@ import logger from "../logger";
 
 const router = Router();
 
-// Fisher-Yates shuffle to randomly select n items from an array
-function selectRandomItems<T>(array: T[], n: number): T[] {
-  const result = [...array];
-  const length = result.length;
-  const count = Math.min(n, length);
+// Generate n unique random integers in range [0, max)
+function generateUniqueRandomOffsets(n: number, max: number): number[] {
+  const count = Math.min(n, max);
+  const offsets = new Set<number>();
   
-  for (let i = 0; i < count; i++) {
-    const randomIndex = i + Math.floor(Math.random() * (length - i));
-    [result[i], result[randomIndex]] = [result[randomIndex], result[i]];
+  while (offsets.size < count) {
+    offsets.add(Math.floor(Math.random() * max));
   }
   
-  return result.slice(0, count);
+  return Array.from(offsets);
 }
 
 function transformPuzzle(row: PuzzleRow): Puzzle {
@@ -128,27 +126,36 @@ router.get("/", async (req: Request, res: Response) => {
       params.push(parsedThemes.length);
     }
 
-    // Step 1: Fetch only matching puzzle IDs (fast, lightweight query)
-    const [idRows] = await pool.execute<RowDataPacket[]>(query, params);
-    const allIds = (idRows as { puzzle_id: string }[]).map(row => row.puzzle_id);
+    // Step 1: Get total count of matching puzzles (fast with index)
+    const countQuery = query.replace("SELECT DISTINCT p.puzzle_id", "SELECT COUNT(DISTINCT p.puzzle_id) as total");
+    const [countResult] = await pool.execute<RowDataPacket[]>(countQuery, params);
+    const totalCount = countResult[0]?.total || 0;
 
-    if (allIds.length === 0) {
+    if (totalCount === 0) {
       return res.json({ puzzles: [] });
     }
 
-    // Step 2: Randomly select N IDs in JavaScript (instant)
-    const selectedIds = selectRandomItems(allIds, puzzleCount);
+    // Step 2: Generate unique random offsets
+    const offsets = generateUniqueRandomOffsets(puzzleCount, totalCount);
 
-    // Step 3: Fetch full puzzle data for selected IDs (uses primary key index)
-    const placeholders = selectedIds.map(() => "?").join(", ");
-    const [rows] = await pool.execute<RowDataPacket[]>(
-      `SELECT * FROM puzzles WHERE puzzle_id IN (${placeholders})`,
-      selectedIds
-    );
+    // Step 3: Fetch puzzles at each random offset
+    // Add ORDER BY for deterministic offset behavior
+    const orderedQuery = query + " ORDER BY p.puzzle_id";
+    
+    const puzzlePromises = offsets.map(async (offset) => {
+      const [rows] = await pool.execute<RowDataPacket[]>(
+        `SELECT p.* FROM puzzles p WHERE p.puzzle_id = (${orderedQuery} LIMIT 1 OFFSET ${offset})`,
+        params
+      );
+      return rows[0] as PuzzleRow | undefined;
+    });
 
-    const response: PuzzleResponse = {
-      puzzles: (rows as PuzzleRow[]).map(transformPuzzle),
-    };
+    const puzzleResults = await Promise.all(puzzlePromises);
+    const puzzles = puzzleResults
+      .filter((row): row is PuzzleRow => row !== undefined)
+      .map(transformPuzzle);
+
+    const response: PuzzleResponse = { puzzles };
 
     return res.json(response);
   } catch (error) {
