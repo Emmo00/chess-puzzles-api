@@ -41,7 +41,7 @@ router.get("/", async (req: Request, res: Response) => {
     }
 
     // Build query for a single random puzzle with optional filters
-    let baseQuery = "SELECT DISTINCT p.puzzle_id FROM puzzles p";
+    let baseQuery = "SELECT p.puzzle_id FROM puzzles p";
     const conditions: string[] = [];
     const params: (string | number)[] = [];
 
@@ -102,7 +102,7 @@ router.get("/", async (req: Request, res: Response) => {
     }
 
     // Step 1: Get count of matching puzzles
-    const countQuery = query.replace("SELECT DISTINCT p.puzzle_id", "SELECT COUNT(DISTINCT p.puzzle_id) as total");
+    const countQuery = query.replace("SELECT p.puzzle_id", "SELECT COUNT(p.puzzle_id) as total");
     const [countResult] = await pool.execute<RowDataPacket[]>(countQuery, params);
     const totalCount = countResult[0]?.total || 0;
 
