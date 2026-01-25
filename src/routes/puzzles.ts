@@ -6,6 +6,20 @@ import logger from "../logger";
 
 const router = Router();
 
+// Fisher-Yates shuffle to randomly select n items from an array
+function selectRandomItems<T>(array: T[], n: number): T[] {
+  const result = [...array];
+  const length = result.length;
+  const count = Math.min(n, length);
+  
+  for (let i = 0; i < count; i++) {
+    const randomIndex = i + Math.floor(Math.random() * (length - i));
+    [result[i], result[randomIndex]] = [result[randomIndex], result[i]];
+  }
+  
+  return result.slice(0, count);
+}
+
 function transformPuzzle(row: PuzzleRow): Puzzle {
   return {
     puzzleid: row.puzzle_id,
@@ -102,8 +116,8 @@ router.get("/", async (req: Request, res: Response) => {
       }
     }
 
-    // Build final query
-    let query = baseQuery;
+    // Build final query - only select puzzle_id for performance
+    let query = baseQuery.replace("SELECT DISTINCT p.*", "SELECT DISTINCT p.puzzle_id");
     if (conditions.length > 0) {
       query += " WHERE " + conditions.join(" AND ");
     }
@@ -114,11 +128,23 @@ router.get("/", async (req: Request, res: Response) => {
       params.push(parsedThemes.length);
     }
 
-    // Randomize and limit results
-    // Note: LIMIT is interpolated directly since puzzleCount is already validated as an integer 1-100
-    query += ` ORDER BY RAND() LIMIT ${puzzleCount}`;
+    // Step 1: Fetch only matching puzzle IDs (fast, lightweight query)
+    const [idRows] = await pool.execute<RowDataPacket[]>(query, params);
+    const allIds = (idRows as { puzzle_id: string }[]).map(row => row.puzzle_id);
 
-    const [rows] = await pool.execute<RowDataPacket[]>(query, params);
+    if (allIds.length === 0) {
+      return res.json({ puzzles: [] });
+    }
+
+    // Step 2: Randomly select N IDs in JavaScript (instant)
+    const selectedIds = selectRandomItems(allIds, puzzleCount);
+
+    // Step 3: Fetch full puzzle data for selected IDs (uses primary key index)
+    const placeholders = selectedIds.map(() => "?").join(", ");
+    const [rows] = await pool.execute<RowDataPacket[]>(
+      `SELECT * FROM puzzles WHERE puzzle_id IN (${placeholders})`,
+      selectedIds
+    );
 
     const response: PuzzleResponse = {
       puzzles: (rows as PuzzleRow[]).map(transformPuzzle),
