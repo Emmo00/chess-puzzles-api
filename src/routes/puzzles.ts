@@ -6,18 +6,6 @@ import logger from "../logger";
 
 const router = Router();
 
-// Generate n unique random integers in range [0, max)
-function generateUniqueRandomOffsets(n: number, max: number): number[] {
-  const count = Math.min(n, max);
-  const offsets = new Set<number>();
-  
-  while (offsets.size < count) {
-    offsets.add(Math.floor(Math.random() * max));
-  }
-  
-  return Array.from(offsets);
-}
-
 function transformPuzzle(row: PuzzleRow): Puzzle {
   return {
     puzzleid: row.puzzle_id,
@@ -33,11 +21,14 @@ function transformPuzzle(row: PuzzleRow): Puzzle {
 
 router.get("/", async (req: Request, res: Response) => {
   try {
-    const { id, rating, count, themes, themesType, playerMoves } = req.query;
+    const { id, rating, themes, themesType, playerMoves } = req.query;
 
-    // If id is provided, return single puzzle (overrides all other params)
+    // If id is provided, return that specific puzzle
     if (id) {
-      const [rows] = await pool.execute<RowDataPacket[]>("SELECT * FROM puzzles WHERE puzzle_id = ?", [id]);
+      const [rows] = await pool.execute<RowDataPacket[]>(
+        "SELECT * FROM puzzles WHERE puzzle_id = ?",
+        [id]
+      );
 
       if (rows.length === 0) {
         return res.status(400).json({ error: "Puzzle not found with the provided id" });
@@ -49,23 +40,8 @@ router.get("/", async (req: Request, res: Response) => {
       return res.json(response);
     }
 
-    // If no id, count is required
-    if (!count) {
-      return res.status(400).json({
-        error: "You must provide either 'id' or 'count' parameter",
-      });
-    }
-
-    // Validate and clamp count to 1-100
-    let puzzleCount = parseInt(count as string, 10);
-    if (isNaN(puzzleCount) || puzzleCount < 1) {
-      puzzleCount = 1;
-    } else if (puzzleCount > 100) {
-      puzzleCount = 100;
-    }
-
-    // Build query dynamically
-    let baseQuery = "SELECT DISTINCT p.* FROM puzzles p";
+    // Build query for a single random puzzle with optional filters
+    let baseQuery = "SELECT DISTINCT p.puzzle_id FROM puzzles p";
     const conditions: string[] = [];
     const params: (string | number)[] = [];
 
@@ -89,7 +65,6 @@ router.get("/", async (req: Request, res: Response) => {
 
       if (parsedThemes.length > 0) {
         baseQuery += " JOIN puzzle_themes pt ON p.puzzle_id = pt.puzzle_id";
-
         const placeholders = parsedThemes.map(() => "?").join(", ");
         conditions.push(`pt.theme IN (${placeholders})`);
         params.push(...parsedThemes);
@@ -114,8 +89,8 @@ router.get("/", async (req: Request, res: Response) => {
       }
     }
 
-    // Build final query - only select puzzle_id for performance
-    let query = baseQuery.replace("SELECT DISTINCT p.*", "SELECT DISTINCT p.puzzle_id");
+    // Build the query
+    let query = baseQuery;
     if (conditions.length > 0) {
       query += " WHERE " + conditions.join(" AND ");
     }
@@ -126,7 +101,7 @@ router.get("/", async (req: Request, res: Response) => {
       params.push(parsedThemes.length);
     }
 
-    // Step 1: Get total count of matching puzzles (fast with index)
+    // Step 1: Get count of matching puzzles
     const countQuery = query.replace("SELECT DISTINCT p.puzzle_id", "SELECT COUNT(DISTINCT p.puzzle_id) as total");
     const [countResult] = await pool.execute<RowDataPacket[]>(countQuery, params);
     const totalCount = countResult[0]?.total || 0;
@@ -135,27 +110,22 @@ router.get("/", async (req: Request, res: Response) => {
       return res.json({ puzzles: [] });
     }
 
-    // Step 2: Generate unique random offsets
-    const offsets = generateUniqueRandomOffsets(puzzleCount, totalCount);
-
-    // Step 3: Fetch puzzles at each random offset
-    // Add ORDER BY for deterministic offset behavior
+    // Step 2: Generate random offset and fetch single puzzle
+    const randomOffset = Math.floor(Math.random() * totalCount);
     const orderedQuery = query + " ORDER BY p.puzzle_id";
-    
-    const puzzlePromises = offsets.map(async (offset) => {
-      const [rows] = await pool.execute<RowDataPacket[]>(
-        `SELECT p.* FROM puzzles p WHERE p.puzzle_id = (${orderedQuery} LIMIT 1 OFFSET ${offset})`,
-        params
-      );
-      return rows[0] as PuzzleRow | undefined;
-    });
 
-    const puzzleResults = await Promise.all(puzzlePromises);
-    const puzzles = puzzleResults
-      .filter((row): row is PuzzleRow => row !== undefined)
-      .map(transformPuzzle);
+    const [rows] = await pool.execute<RowDataPacket[]>(
+      `SELECT * FROM puzzles WHERE puzzle_id = (${orderedQuery} LIMIT 1 OFFSET ${randomOffset})`,
+      params
+    );
 
-    const response: PuzzleResponse = { puzzles };
+    if (rows.length === 0) {
+      return res.json({ puzzles: [] });
+    }
+
+    const response: PuzzleResponse = {
+      puzzles: [transformPuzzle(rows[0] as PuzzleRow)],
+    };
 
     return res.json(response);
   } catch (error) {
