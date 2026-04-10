@@ -1,5 +1,4 @@
 import pool from "../db";
-import { RowDataPacket } from "mysql2";
 
 // Mock puzzle data with varied attributes for comprehensive testing
 const mockPuzzles = [
@@ -278,13 +277,28 @@ const mockPuzzles = [
 
 // Generate theme entries from puzzles
 function generateThemeEntries() {
-  const entries: { puzzle_id: string; theme: string }[] = [];
+  const entries: { puzzle_id: string; theme_name: string }[] = [];
   for (const puzzle of mockPuzzles) {
     if (puzzle.themes) {
       const themes = puzzle.themes.trim().split(/\s+/);
       for (const theme of themes) {
         if (theme) {
-          entries.push({ puzzle_id: puzzle.puzzle_id, theme });
+          entries.push({ puzzle_id: puzzle.puzzle_id, theme_name: theme });
+        }
+      }
+    }
+  }
+  return entries;
+}
+
+function generateOpeningEntries() {
+  const entries: { puzzle_id: string; opening_name: string }[] = [];
+  for (const puzzle of mockPuzzles) {
+    if (puzzle.opening_tags) {
+      const openings = puzzle.opening_tags.trim().split(/\s+/);
+      for (const opening of openings) {
+        if (opening) {
+          entries.push({ puzzle_id: puzzle.puzzle_id, opening_name: opening });
         }
       }
     }
@@ -293,107 +307,168 @@ function generateThemeEntries() {
 }
 
 async function createTables() {
-  const createPuzzlesTable = `
+  await pool.query("DROP TABLE IF EXISTS puzzle_openings");
+  await pool.query("DROP TABLE IF EXISTS puzzle_themes");
+  await pool.query("DROP TABLE IF EXISTS openings");
+  await pool.query("DROP TABLE IF EXISTS themes");
+  await pool.query("DROP TABLE IF EXISTS puzzles");
+  await pool.query("DROP TABLE IF EXISTS api_keys");
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS puzzles (
-      puzzle_id VARCHAR(10) PRIMARY KEY,
+      puzzle_id TEXT PRIMARY KEY,
       fen TEXT NOT NULL,
-      moves TEXT NOT NULL,
-      rating SMALLINT UNSIGNED NOT NULL,
-      rating_deviation SMALLINT UNSIGNED NOT NULL,
-      popularity TINYINT NOT NULL,
-      nb_plays INT UNSIGNED NOT NULL,
-      themes TEXT,
-      game_url VARCHAR(255),
-      opening_tags TEXT,
-      player_moves TINYINT UNSIGNED NOT NULL,
-      INDEX idx_rating (rating),
-      INDEX idx_popularity (popularity),
-      INDEX idx_nb_plays (nb_plays),
-      INDEX idx_player_moves (player_moves)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-  `;
+      moves_json JSONB NOT NULL,
+      rating INTEGER NOT NULL,
+      rating_deviation INTEGER NOT NULL,
+      popularity INTEGER NOT NULL,
+      nb_plays INTEGER NOT NULL,
+      game_url TEXT,
+      player_moves INTEGER NOT NULL,
+      theme_count INTEGER NOT NULL DEFAULT 0,
+      opening_count INTEGER NOT NULL DEFAULT 0,
+      random_key DOUBLE PRECISION NOT NULL,
+      bucket_100 SMALLINT NOT NULL,
+      bucket_1000 SMALLINT NOT NULL
+    )
+  `);
 
-  const createPuzzleThemesTable = `
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS themes (
+      theme_id BIGSERIAL PRIMARY KEY,
+      theme_name TEXT UNIQUE NOT NULL
+    )
+  `);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS puzzle_themes (
-      puzzle_id VARCHAR(10) NOT NULL,
-      theme VARCHAR(50) NOT NULL,
-      PRIMARY KEY (puzzle_id, theme),
-      INDEX idx_theme (theme),
-      FOREIGN KEY (puzzle_id) REFERENCES puzzles(puzzle_id) ON DELETE CASCADE
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-  `;
+      puzzle_id TEXT NOT NULL REFERENCES puzzles(puzzle_id) ON DELETE CASCADE,
+      theme_id BIGINT NOT NULL REFERENCES themes(theme_id) ON DELETE CASCADE,
+      PRIMARY KEY (puzzle_id, theme_id)
+    )
+  `);
 
-  const createApiKeysTable = `
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS openings (
+      opening_id BIGSERIAL PRIMARY KEY,
+      opening_name TEXT UNIQUE NOT NULL
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS puzzle_openings (
+      puzzle_id TEXT NOT NULL REFERENCES puzzles(puzzle_id) ON DELETE CASCADE,
+      opening_id BIGINT NOT NULL REFERENCES openings(opening_id) ON DELETE CASCADE,
+      PRIMARY KEY (puzzle_id, opening_id)
+    )
+  `);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS api_keys (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      api_key VARCHAR(255) UNIQUE NOT NULL,
-      description VARCHAR(255),
+      id BIGSERIAL PRIMARY KEY,
+      api_key TEXT UNIQUE NOT NULL,
+      description TEXT,
       is_active BOOLEAN DEFAULT TRUE,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      last_used_at TIMESTAMP NULL,
-      created_by VARCHAR(100),
-      INDEX idx_api_key (api_key),
-      INDEX idx_is_active (is_active)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-  `;
-
-  await pool.execute("DROP TABLE IF EXISTS puzzle_themes");
-  await pool.execute("DROP TABLE IF EXISTS puzzles");
-  await pool.execute("DROP TABLE IF EXISTS api_keys");
-  await pool.execute(createApiKeysTable);
-  await pool.execute(createPuzzlesTable);
-  await pool.execute(createPuzzleThemesTable);
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+      last_used_at TIMESTAMPTZ,
+      created_by TEXT
+    )
+  `);
 }
 
 async function seedData() {
   // Insert test API key
-  await pool.execute(
-    "INSERT INTO api_keys (api_key, description) VALUES (?, ?)",
+  await pool.query(
+    "INSERT INTO api_keys (api_key, description) VALUES ($1, $2)",
     ["test-api-key", "Test API Key"]
   );
 
   // Insert puzzles
   for (const puzzle of mockPuzzles) {
-    await pool.execute(
-      `INSERT INTO puzzles (puzzle_id, fen, moves, rating, rating_deviation, popularity, nb_plays, themes, game_url, opening_tags, player_moves)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    const randomKey = Math.random();
+    await pool.query(
+      `INSERT INTO puzzles (
+        puzzle_id,
+        fen,
+        moves_json,
+        rating,
+        rating_deviation,
+        popularity,
+        nb_plays,
+        game_url,
+        player_moves,
+        theme_count,
+        opening_count,
+        random_key,
+        bucket_100,
+        bucket_1000
+      ) VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
       [
         puzzle.puzzle_id,
         puzzle.fen,
-        puzzle.moves,
+        JSON.stringify(puzzle.moves.trim().split(/\s+/).filter(Boolean)),
         puzzle.rating,
         puzzle.rating_deviation,
         puzzle.popularity,
         puzzle.nb_plays,
-        puzzle.themes,
         puzzle.game_url,
-        puzzle.opening_tags,
         puzzle.player_moves,
+        puzzle.themes.trim() ? puzzle.themes.trim().split(/\s+/).length : 0,
+        puzzle.opening_tags.trim() ? puzzle.opening_tags.trim().split(/\s+/).length : 0,
+        randomKey,
+        Math.min(99, Math.floor(randomKey * 100)),
+        Math.min(999, Math.floor(randomKey * 1000)),
       ]
     );
   }
 
-  // Insert theme entries
+  // Insert themes and puzzle-theme joins
   const themeEntries = generateThemeEntries();
+  const uniqueThemes = [...new Set(themeEntries.map((entry) => entry.theme_name))];
+  for (const themeName of uniqueThemes) {
+    await pool.query("INSERT INTO themes (theme_name) VALUES ($1) ON CONFLICT (theme_name) DO NOTHING", [themeName]);
+  }
+
   for (const entry of themeEntries) {
-    await pool.execute(
-      `INSERT INTO puzzle_themes (puzzle_id, theme) VALUES (?, ?)`,
-      [entry.puzzle_id, entry.theme]
+    await pool.query(
+      `INSERT INTO puzzle_themes (puzzle_id, theme_id)
+       SELECT $1, t.theme_id FROM themes t WHERE t.theme_name = $2
+       ON CONFLICT (puzzle_id, theme_id) DO NOTHING`,
+      [entry.puzzle_id, entry.theme_name]
+    );
+  }
+
+  // Insert openings and puzzle-opening joins
+  const openingEntries = generateOpeningEntries();
+  const uniqueOpenings = [...new Set(openingEntries.map((entry) => entry.opening_name))];
+  for (const openingName of uniqueOpenings) {
+    await pool.query("INSERT INTO openings (opening_name) VALUES ($1) ON CONFLICT (opening_name) DO NOTHING", [openingName]);
+  }
+
+  for (const entry of openingEntries) {
+    await pool.query(
+      `INSERT INTO puzzle_openings (puzzle_id, opening_id)
+       SELECT $1, o.opening_id FROM openings o WHERE o.opening_name = $2
+       ON CONFLICT (puzzle_id, opening_id) DO NOTHING`,
+      [entry.puzzle_id, entry.opening_name]
     );
   }
 }
 
 async function cleanupTables() {
-  await pool.execute("DROP TABLE IF EXISTS puzzle_themes");
-  await pool.execute("DROP TABLE IF EXISTS puzzles");
-  await pool.execute("DROP TABLE IF EXISTS api_keys");
+  await pool.query("DROP TABLE IF EXISTS puzzle_openings");
+  await pool.query("DROP TABLE IF EXISTS puzzle_themes");
+  await pool.query("DROP TABLE IF EXISTS openings");
+  await pool.query("DROP TABLE IF EXISTS themes");
+  await pool.query("DROP TABLE IF EXISTS puzzles");
+  await pool.query("DROP TABLE IF EXISTS api_keys");
 }
 
 // Global setup - runs once before all tests
 beforeAll(async () => {
   try {
     // Test database connection
-    const [rows] = await pool.execute<RowDataPacket[]>("SELECT 1");
+    await pool.query("SELECT 1");
     console.log("Database connected successfully");
 
     // Create tables and seed data

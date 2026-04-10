@@ -16,15 +16,15 @@ export interface PuzzleResponse {
 export interface PuzzleRow {
   puzzle_id: string;
   fen: string;
-  moves: string;
+  moves_json: string | string[];
   rating: number;
   rating_deviation: number;
   popularity: number;
   nb_plays: number;
-  themes: string;
   game_url: string;
-  opening_tags: string;
   player_moves: number;
+  theme_names: string[] | null;
+  opening_names: string[] | null;
 }
 
 export interface AuthConfig {

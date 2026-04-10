@@ -1,58 +1,95 @@
 import * as fs from "fs";
 import * as path from "path";
 import csvParser from "csv-parser";
-import * as mysql from "mysql2/promise";
+import { Pool, PoolClient } from "pg";
 import * as dotenv from "dotenv";
 
 // Load environment variables
 dotenv.config();
 
 // Database configuration
-const dbConfig: mysql.PoolOptions = {
-  host: process.env.DB_HOST || "localhost",
-  port: parseInt(process.env.DB_PORT || "3306", 10),
-  user: process.env.DB_USER || "root",
-  password: process.env.DB_PASSWORD || "",
-  database: process.env.DB_NAME || "chess_puzzles",
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0,
+const dbConfig = {
+  host: process.env.PGHOST || process.env.DB_HOST || "localhost",
+  port: (() => {
+    const resolvedPort = parseInt(process.env.PGPORT || process.env.DB_PORT || "5432", 10);
+    if (Number.isNaN(resolvedPort)) return 5432;
+    return !process.env.PGPORT && resolvedPort === 3306 ? 5432 : resolvedPort;
+  })(),
+  user: process.env.PGUSER || process.env.DB_USER || "postgres",
+  password: process.env.PGPASSWORD || process.env.DB_PASSWORD || "",
+  database: process.env.PGDATABASE || process.env.DB_NAME || "chess_puzzles",
+  max: 20,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 5000,
 };
 
-// Schema definitions
-const CREATE_PUZZLES_TABLE = `
-CREATE TABLE IF NOT EXISTS puzzles (
-  puzzle_id VARCHAR(10) PRIMARY KEY,
+const CREATE_SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS raw_puzzles (
+  puzzle_id TEXT PRIMARY KEY,
   fen TEXT NOT NULL,
   moves TEXT NOT NULL,
-  rating SMALLINT UNSIGNED NOT NULL,
-  rating_deviation SMALLINT UNSIGNED NOT NULL,
-  popularity TINYINT NOT NULL,
-  nb_plays INT UNSIGNED NOT NULL,
+  rating INTEGER NOT NULL,
+  rating_deviation INTEGER NOT NULL,
+  popularity INTEGER NOT NULL,
+  nb_plays INTEGER NOT NULL,
   themes TEXT,
-  game_url VARCHAR(255),
+  game_url TEXT,
   opening_tags TEXT,
-  player_moves TINYINT UNSIGNED NOT NULL,
-  INDEX idx_rating (rating),
-  INDEX idx_popularity (popularity),
-  INDEX idx_nb_plays (nb_plays),
-  INDEX idx_player_moves (player_moves)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-`;
+  imported_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 
-const CREATE_PUZZLE_THEMES_TABLE = `
+CREATE TABLE IF NOT EXISTS puzzles (
+  puzzle_id TEXT PRIMARY KEY,
+  fen TEXT NOT NULL,
+  moves_json JSONB NOT NULL,
+  rating INTEGER NOT NULL,
+  rating_deviation INTEGER NOT NULL,
+  popularity INTEGER NOT NULL,
+  nb_plays INTEGER NOT NULL,
+  game_url TEXT,
+  player_moves INTEGER NOT NULL,
+  theme_count INTEGER NOT NULL DEFAULT 0,
+  opening_count INTEGER NOT NULL DEFAULT 0,
+  random_key DOUBLE PRECISION NOT NULL,
+  bucket_100 SMALLINT NOT NULL,
+  bucket_1000 SMALLINT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS themes (
+  theme_id BIGSERIAL PRIMARY KEY,
+  theme_name TEXT UNIQUE NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS puzzle_themes (
-  puzzle_id VARCHAR(10) NOT NULL,
-  theme VARCHAR(50) NOT NULL,
-  PRIMARY KEY (puzzle_id, theme),
-  INDEX idx_theme (theme),
-  FOREIGN KEY (puzzle_id) REFERENCES puzzles(puzzle_id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  puzzle_id TEXT NOT NULL REFERENCES puzzles(puzzle_id) ON DELETE CASCADE,
+  theme_id BIGINT NOT NULL REFERENCES themes(theme_id) ON DELETE CASCADE,
+  PRIMARY KEY (puzzle_id, theme_id)
+);
+
+CREATE TABLE IF NOT EXISTS openings (
+  opening_id BIGSERIAL PRIMARY KEY,
+  opening_name TEXT UNIQUE NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS puzzle_openings (
+  puzzle_id TEXT NOT NULL REFERENCES puzzles(puzzle_id) ON DELETE CASCADE,
+  opening_id BIGINT NOT NULL REFERENCES openings(opening_id) ON DELETE CASCADE,
+  PRIMARY KEY (puzzle_id, opening_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_puzzles_rating ON puzzles (rating);
+CREATE INDEX IF NOT EXISTS idx_puzzles_player_moves ON puzzles (player_moves);
+CREATE INDEX IF NOT EXISTS idx_puzzles_random_key ON puzzles (random_key);
+CREATE INDEX IF NOT EXISTS idx_puzzles_rating_random_key ON puzzles (rating, random_key);
+CREATE INDEX IF NOT EXISTS idx_puzzles_player_moves_random_key ON puzzles (player_moves, random_key);
+CREATE INDEX IF NOT EXISTS idx_puzzles_rating_player_moves_random_key ON puzzles (rating, player_moves, random_key);
+CREATE INDEX IF NOT EXISTS idx_puzzle_themes_theme_puzzle ON puzzle_themes (theme_id, puzzle_id);
+CREATE INDEX IF NOT EXISTS idx_puzzle_openings_opening_puzzle ON puzzle_openings (opening_id, puzzle_id);
 `;
 
 // Batch size for inserts
 const BATCH_SIZE = 1000;
-const THEME_BATCH_SIZE = 5000;
 const PROGRESS_INTERVAL = 50000;
 
 interface PuzzleRow {
@@ -72,129 +109,265 @@ interface PuzzleData {
   puzzle_id: string;
   fen: string;
   moves: string;
+  moves_json: string;
   rating: number;
   rating_deviation: number;
   popularity: number;
   nb_plays: number;
-  themes: string;
   game_url: string;
-  opening_tags: string;
   player_moves: number;
+  random_key: number;
+  bucket_100: number;
+  bucket_1000: number;
+  theme_count: number;
+  opening_count: number;
 }
 
-interface ThemeData {
+interface PuzzleThemeData {
   puzzle_id: string;
-  theme: string;
+  theme_name: string;
 }
 
-async function createSchema(pool: mysql.Pool): Promise<void> {
+interface PuzzleOpeningData {
+  puzzle_id: string;
+  opening_name: string;
+}
+
+async function createSchema(pool: Pool): Promise<void> {
   console.log("Creating database schema...");
 
-  const connection = await pool.getConnection();
-  try {
-    // Drop existing tables to start fresh (optional - comment out if you want to keep data)
-    await connection.execute("DROP TABLE IF EXISTS puzzle_themes");
-    await connection.execute("DROP TABLE IF EXISTS puzzles");
-
-    // Create tables
-    await connection.execute(CREATE_PUZZLES_TABLE);
-    await connection.execute(CREATE_PUZZLE_THEMES_TABLE);
-
-    console.log("Schema created successfully.");
-  } finally {
-    connection.release();
-  }
+  await pool.query(CREATE_SCHEMA_SQL);
+  console.log("Schema ready.");
 }
 
-async function insertPuzzlesBatch(
-  pool: mysql.Pool,
-  puzzles: PuzzleData[]
-): Promise<void> {
+function buildInsertQuery(
+  tableName: string,
+  columns: string[],
+  rowCount: number,
+  startParam = 1
+): string {
+  const values: string[] = [];
+  let param = startParam;
+
+  for (let i = 0; i < rowCount; i++) {
+    const rowParams: string[] = [];
+    for (let j = 0; j < columns.length; j++) {
+      rowParams.push(`$${param++}`);
+    }
+    values.push(`(${rowParams.join(",")})`);
+  }
+
+  return `INSERT INTO ${tableName} (${columns.join(",")}) VALUES ${values.join(",")}`;
+}
+
+async function upsertRawPuzzles(client: PoolClient, puzzles: PuzzleData[], themesByPuzzle: Map<string, string>, openingsByPuzzle: Map<string, string>): Promise<void> {
   if (puzzles.length === 0) return;
 
-  const placeholders = puzzles
-    .map(() => "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-    .join(", ");
+  const columns = [
+    "puzzle_id",
+    "fen",
+    "moves",
+    "rating",
+    "rating_deviation",
+    "popularity",
+    "nb_plays",
+    "themes",
+    "game_url",
+    "opening_tags",
+  ];
+
+  const values = puzzles.flatMap((puzzle) => [
+    puzzle.puzzle_id,
+    puzzle.fen,
+    puzzle.moves,
+    puzzle.rating,
+    puzzle.rating_deviation,
+    puzzle.popularity,
+    puzzle.nb_plays,
+    themesByPuzzle.get(puzzle.puzzle_id) || "",
+    puzzle.game_url,
+    openingsByPuzzle.get(puzzle.puzzle_id) || "",
+  ]);
+
+  const query = `${buildInsertQuery("raw_puzzles", columns, puzzles.length)}
+    ON CONFLICT (puzzle_id) DO UPDATE SET
+      fen = EXCLUDED.fen,
+      moves = EXCLUDED.moves,
+      rating = EXCLUDED.rating,
+      rating_deviation = EXCLUDED.rating_deviation,
+      popularity = EXCLUDED.popularity,
+      nb_plays = EXCLUDED.nb_plays,
+      themes = EXCLUDED.themes,
+      game_url = EXCLUDED.game_url,
+      opening_tags = EXCLUDED.opening_tags,
+      imported_at = NOW()`;
+
+  await client.query(query, values);
+}
+
+async function upsertPuzzlesBatch(client: PoolClient, puzzles: PuzzleData[]): Promise<void> {
+  if (puzzles.length === 0) return;
+
+  const columns = [
+    "puzzle_id",
+    "fen",
+    "moves_json",
+    "rating",
+    "rating_deviation",
+    "popularity",
+    "nb_plays",
+    "game_url",
+    "player_moves",
+    "theme_count",
+    "opening_count",
+    "random_key",
+    "bucket_100",
+    "bucket_1000",
+  ];
 
   const values = puzzles.flatMap((p) => [
     p.puzzle_id,
     p.fen,
-    p.moves,
+    p.moves_json,
     p.rating,
     p.rating_deviation,
     p.popularity,
     p.nb_plays,
-    p.themes,
     p.game_url,
-    p.opening_tags,
     p.player_moves,
+    p.theme_count,
+    p.opening_count,
+    p.random_key,
+    p.bucket_100,
+    p.bucket_1000,
   ]);
 
-  const sql = `
-    INSERT IGNORE INTO puzzles (puzzle_id, fen, moves, rating, rating_deviation, popularity, nb_plays, themes, game_url, opening_tags, player_moves)
-    VALUES ${placeholders}
-  `;
+  const query = `${buildInsertQuery("puzzles", columns, puzzles.length)}
+    ON CONFLICT (puzzle_id) DO UPDATE SET
+      fen = EXCLUDED.fen,
+      moves_json = EXCLUDED.moves_json,
+      rating = EXCLUDED.rating,
+      rating_deviation = EXCLUDED.rating_deviation,
+      popularity = EXCLUDED.popularity,
+      nb_plays = EXCLUDED.nb_plays,
+      game_url = EXCLUDED.game_url,
+      player_moves = EXCLUDED.player_moves,
+      theme_count = EXCLUDED.theme_count,
+      opening_count = EXCLUDED.opening_count,
+      random_key = EXCLUDED.random_key,
+      bucket_100 = EXCLUDED.bucket_100,
+      bucket_1000 = EXCLUDED.bucket_1000`;
 
-  await pool.query(sql, values);
+  await client.query(query, values);
 }
 
-async function insertThemesBatch(
-  pool: mysql.Pool,
-  themes: ThemeData[]
-): Promise<void> {
-  if (themes.length === 0) return;
+async function upsertThemesAndJoin(client: PoolClient, puzzleThemes: PuzzleThemeData[]): Promise<void> {
+  if (puzzleThemes.length === 0) return;
 
-  // Insert themes in smaller chunks to avoid max_allowed_packet issues
-  for (let i = 0; i < themes.length; i += THEME_BATCH_SIZE) {
-    const chunk = themes.slice(i, i + THEME_BATCH_SIZE);
-    const placeholders = chunk.map(() => "(?, ?)").join(", ");
-    const values = chunk.flatMap((t) => [t.puzzle_id, t.theme]);
+  const uniqueThemeNames = [...new Set(puzzleThemes.map((t) => t.theme_name))];
+  await client.query(
+    "INSERT INTO themes (theme_name) SELECT UNNEST($1::text[]) ON CONFLICT (theme_name) DO NOTHING",
+    [uniqueThemeNames]
+  );
 
-    const sql = `
-      INSERT IGNORE INTO puzzle_themes (puzzle_id, theme)
-      VALUES ${placeholders}
-    `;
+  const themeRows = await client.query<{ theme_id: number; theme_name: string }>(
+    "SELECT theme_id, theme_name FROM themes WHERE theme_name = ANY($1::text[])",
+    [uniqueThemeNames]
+  );
 
-    await pool.query(sql, values);
-  }
+  const themeMap = new Map(themeRows.rows.map((row) => [row.theme_name, row.theme_id]));
+  const pairs = puzzleThemes
+    .map((entry) => ({ puzzle_id: entry.puzzle_id, theme_id: themeMap.get(entry.theme_name) }))
+    .filter((entry): entry is { puzzle_id: string; theme_id: number } => entry.theme_id !== undefined);
+
+  if (pairs.length === 0) return;
+
+  const columns = ["puzzle_id", "theme_id"];
+  const values = pairs.flatMap((pair) => [pair.puzzle_id, pair.theme_id]);
+  const query = `${buildInsertQuery("puzzle_themes", columns, pairs.length)} ON CONFLICT (puzzle_id, theme_id) DO NOTHING`;
+
+  await client.query(query, values);
+}
+
+async function upsertOpeningsAndJoin(client: PoolClient, puzzleOpenings: PuzzleOpeningData[]): Promise<void> {
+  if (puzzleOpenings.length === 0) return;
+
+  const uniqueOpeningNames = [...new Set(puzzleOpenings.map((o) => o.opening_name))];
+  await client.query(
+    "INSERT INTO openings (opening_name) SELECT UNNEST($1::text[]) ON CONFLICT (opening_name) DO NOTHING",
+    [uniqueOpeningNames]
+  );
+
+  const openingRows = await client.query<{ opening_id: number; opening_name: string }>(
+    "SELECT opening_id, opening_name FROM openings WHERE opening_name = ANY($1::text[])",
+    [uniqueOpeningNames]
+  );
+
+  const openingMap = new Map(openingRows.rows.map((row) => [row.opening_name, row.opening_id]));
+  const pairs = puzzleOpenings
+    .map((entry) => ({ puzzle_id: entry.puzzle_id, opening_id: openingMap.get(entry.opening_name) }))
+    .filter((entry): entry is { puzzle_id: string; opening_id: number } => entry.opening_id !== undefined);
+
+  if (pairs.length === 0) return;
+
+  const columns = ["puzzle_id", "opening_id"];
+  const values = pairs.flatMap((pair) => [pair.puzzle_id, pair.opening_id]);
+  const query = `${buildInsertQuery("puzzle_openings", columns, pairs.length)} ON CONFLICT (puzzle_id, opening_id) DO NOTHING`;
+
+  await client.query(query, values);
 }
 
 function parseRow(row: PuzzleRow): {
   puzzle: PuzzleData;
-  themes: ThemeData[];
+  puzzleThemes: PuzzleThemeData[];
+  puzzleOpenings: PuzzleOpeningData[];
+  themesRaw: string;
+  openingTagsRaw: string;
 } {
   // Calculate player moves: player makes every other move starting from move 2 (index 1)
   const moves = row.Moves || "";
   const movesList = moves.trim() ? moves.trim().split(/\s+/) : [];
   const playerMoves = Math.floor(movesList.length / 2);
 
+  const randomKey = Math.random();
+  const bucket100 = Math.min(99, Math.floor(randomKey * 100));
+  const bucket1000 = Math.min(999, Math.floor(randomKey * 1000));
+
   // Ensure all values are defined (not undefined) - use empty string or 0 as fallbacks
+  const themesRaw = (row.Themes || "").trim();
+  const openingTagsRaw = (row.OpeningTags || "").trim();
+  const themeNames = themesRaw ? themesRaw.split(/\s+/).filter(Boolean) : [];
+  const openingNames = openingTagsRaw ? openingTagsRaw.split(/\s+/).filter(Boolean) : [];
+
   const puzzle: PuzzleData = {
     puzzle_id: row.PuzzleId || "",
     fen: row.FEN || "",
     moves: moves,
+    moves_json: JSON.stringify(movesList),
     rating: parseInt(row.Rating, 10) || 0,
     rating_deviation: parseInt(row.RatingDeviation, 10) || 0,
     popularity: parseInt(row.Popularity, 10) || 0,
     nb_plays: parseInt(row.NbPlays, 10) || 0,
-    themes: row.Themes || "",
     game_url: row.GameUrl || "",
-    opening_tags: row.OpeningTags || "",
     player_moves: playerMoves,
+    random_key: randomKey,
+    bucket_100: bucket100,
+    bucket_1000: bucket1000,
+    theme_count: themeNames.length,
+    opening_count: openingNames.length,
   };
 
-  // Parse themes into separate entries
-  const themes: ThemeData[] = [];
-  if (row.Themes && row.Themes.trim()) {
-    const themeList = row.Themes.trim().split(/\s+/);
-    for (const theme of themeList) {
-      if (theme) {
-        themes.push({ puzzle_id: row.PuzzleId, theme });
-      }
-    }
-  }
+  const puzzleThemes: PuzzleThemeData[] = themeNames.map((themeName) => ({
+    puzzle_id: row.PuzzleId,
+    theme_name: themeName,
+  }));
 
-  return { puzzle, themes };
+  const puzzleOpenings: PuzzleOpeningData[] = openingNames.map((openingName) => ({
+    puzzle_id: row.PuzzleId,
+    opening_name: openingName,
+  }));
+
+  return { puzzle, puzzleThemes, puzzleOpenings, themesRaw, openingTagsRaw };
 }
 
 async function importPuzzles(csvPath: string): Promise<void> {
@@ -202,30 +375,24 @@ async function importPuzzles(csvPath: string): Promise<void> {
   console.log(`Batch size: ${BATCH_SIZE}`);
   console.log("");
 
-  // Create connection pool
-  const pool = mysql.createPool(dbConfig);
+  const pool = new Pool(dbConfig);
 
   try {
-    // Test connection
-    const connection = await pool.getConnection();
-    console.log("Connected to MySQL database.");
-    connection.release();
+    await pool.query("SELECT 1");
+    console.log("Connected to PostgreSQL database.");
 
     // Create schema
     await createSchema(pool);
 
-    // Disable foreign key checks and autocommit for faster inserts
-    await pool.execute("SET FOREIGN_KEY_CHECKS = 0");
-    await pool.execute("SET autocommit = 0");
-
-    // Disable keys for faster bulk insert
-    await pool.execute("ALTER TABLE puzzles DISABLE KEYS");
-    await pool.execute("ALTER TABLE puzzle_themes DISABLE KEYS");
-
     let puzzleBatch: PuzzleData[] = [];
-    let themeBatch: ThemeData[] = [];
+    let puzzleThemeBatch: PuzzleThemeData[] = [];
+    let puzzleOpeningBatch: PuzzleOpeningData[] = [];
+    const themesByPuzzle = new Map<string, string>();
+    const openingsByPuzzle = new Map<string, string>();
     let totalRows = 0;
     const startTime = Date.now();
+
+    await pool.query("TRUNCATE TABLE raw_puzzles, puzzle_themes, puzzle_openings, themes, openings, puzzles RESTART IDENTITY");
 
     // Create read stream and parse CSV
     const stream = fs
@@ -233,20 +400,37 @@ async function importPuzzles(csvPath: string): Promise<void> {
       .pipe(csvParser());
 
     for await (const row of stream) {
-      const { puzzle, themes } = parseRow(row as PuzzleRow);
+      const { puzzle, puzzleThemes, puzzleOpenings, themesRaw, openingTagsRaw } = parseRow(row as PuzzleRow);
 
       puzzleBatch.push(puzzle);
-      themeBatch.push(...themes);
+      puzzleThemeBatch.push(...puzzleThemes);
+      puzzleOpeningBatch.push(...puzzleOpenings);
+      themesByPuzzle.set(puzzle.puzzle_id, themesRaw);
+      openingsByPuzzle.set(puzzle.puzzle_id, openingTagsRaw);
       totalRows++;
 
       // Insert batch when it reaches the batch size
       if (puzzleBatch.length >= BATCH_SIZE) {
-        await insertPuzzlesBatch(pool, puzzleBatch);
-        await insertThemesBatch(pool, themeBatch);
-        await pool.execute("COMMIT");
+        const client = await pool.connect();
+        try {
+          await client.query("BEGIN");
+          await upsertRawPuzzles(client, puzzleBatch, themesByPuzzle, openingsByPuzzle);
+          await upsertPuzzlesBatch(client, puzzleBatch);
+          await upsertThemesAndJoin(client, puzzleThemeBatch);
+          await upsertOpeningsAndJoin(client, puzzleOpeningBatch);
+          await client.query("COMMIT");
+        } catch (error) {
+          await client.query("ROLLBACK");
+          throw error;
+        } finally {
+          client.release();
+        }
 
         puzzleBatch = [];
-        themeBatch = [];
+        puzzleThemeBatch = [];
+        puzzleOpeningBatch = [];
+        themesByPuzzle.clear();
+        openingsByPuzzle.clear();
       }
 
       // Log progress
@@ -261,20 +445,21 @@ async function importPuzzles(csvPath: string): Promise<void> {
 
     // Insert remaining rows
     if (puzzleBatch.length > 0) {
-      await insertPuzzlesBatch(pool, puzzleBatch);
-      await insertThemesBatch(pool, themeBatch);
-      await pool.execute("COMMIT");
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await upsertRawPuzzles(client, puzzleBatch, themesByPuzzle, openingsByPuzzle);
+        await upsertPuzzlesBatch(client, puzzleBatch);
+        await upsertThemesAndJoin(client, puzzleThemeBatch);
+        await upsertOpeningsAndJoin(client, puzzleOpeningBatch);
+        await client.query("COMMIT");
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      } finally {
+        client.release();
+      }
     }
-
-    // Re-enable keys and rebuild indexes
-    console.log("");
-    console.log("Rebuilding indexes...");
-    await pool.execute("ALTER TABLE puzzles ENABLE KEYS");
-    await pool.execute("ALTER TABLE puzzle_themes ENABLE KEYS");
-
-    // Re-enable foreign key checks
-    await pool.execute("SET FOREIGN_KEY_CHECKS = 1");
-    await pool.execute("SET autocommit = 1");
 
     const totalTime = (Date.now() - startTime) / 1000;
     console.log("");
@@ -288,17 +473,15 @@ async function importPuzzles(csvPath: string): Promise<void> {
     console.log("=".repeat(50));
 
     // Show some stats
-    const [puzzleCount] = await pool.execute<mysql.RowDataPacket[]>(
-      "SELECT COUNT(*) as count FROM puzzles"
-    );
-    const [themeCount] = await pool.execute<mysql.RowDataPacket[]>(
-      "SELECT COUNT(DISTINCT theme) as count FROM puzzle_themes"
+    const puzzleCountResult = await pool.query<{ count: string }>("SELECT COUNT(*)::text as count FROM puzzles");
+    const themeCountResult = await pool.query<{ count: string }>(
+      "SELECT COUNT(*)::text as count FROM themes"
     );
 
     console.log("");
     console.log("Database stats:");
-    console.log(`  Puzzles in database: ${puzzleCount[0].count.toLocaleString()}`);
-    console.log(`  Unique themes: ${themeCount[0].count}`);
+    console.log(`  Puzzles in database: ${Number(puzzleCountResult.rows[0].count).toLocaleString()}`);
+    console.log(`  Unique themes: ${Number(themeCountResult.rows[0].count).toLocaleString()}`);
 
     // Show sample queries
     console.log("");
@@ -309,7 +492,8 @@ async function importPuzzles(csvPath: string): Promise<void> {
     console.log("  -- Get puzzles by theme:");
     console.log("  SELECT p.* FROM puzzles p");
     console.log("  JOIN puzzle_themes pt ON p.puzzle_id = pt.puzzle_id");
-    console.log("  WHERE pt.theme = 'fork'");
+    console.log("  JOIN themes t ON t.theme_id = pt.theme_id");
+    console.log("  WHERE t.theme_name = 'fork'");
     console.log("  LIMIT 10;");
   } finally {
     await pool.end();
