@@ -91,6 +91,18 @@ CREATE INDEX IF NOT EXISTS idx_puzzle_openings_opening_puzzle ON puzzle_openings
 // Batch size for inserts
 const BATCH_SIZE = 1000;
 const PROGRESS_INTERVAL = 50000;
+const CSV_HEADERS = [
+  "PuzzleId",
+  "FEN",
+  "Moves",
+  "Rating",
+  "RatingDeviation",
+  "Popularity",
+  "NbPlays",
+  "Themes",
+  "GameUrl",
+  "OpeningTags",
+];
 
 interface PuzzleRow {
   PuzzleId: string;
@@ -131,6 +143,12 @@ interface PuzzleThemeData {
 interface PuzzleOpeningData {
   puzzle_id: string;
   opening_name: string;
+}
+
+interface PreparedBatch {
+  puzzles: PuzzleData[];
+  puzzleThemes: PuzzleThemeData[];
+  puzzleOpenings: PuzzleOpeningData[];
 }
 
 async function createSchema(pool: Pool): Promise<void> {
@@ -370,6 +388,46 @@ function parseRow(row: PuzzleRow): {
   return { puzzle, puzzleThemes, puzzleOpenings, themesRaw, openingTagsRaw };
 }
 
+function prepareBatch(
+  puzzles: PuzzleData[],
+  puzzleThemes: PuzzleThemeData[],
+  puzzleOpenings: PuzzleOpeningData[]
+): PreparedBatch {
+  // Keep the last occurrence of a puzzle_id in the current batch.
+  const puzzleMap = new Map<string, PuzzleData>();
+  for (const puzzle of puzzles) {
+    puzzleMap.set(puzzle.puzzle_id, puzzle);
+  }
+
+  const validPuzzleIds = new Set(puzzleMap.keys());
+
+  const seenThemePairs = new Set<string>();
+  const dedupedThemes: PuzzleThemeData[] = [];
+  for (const entry of puzzleThemes) {
+    if (!validPuzzleIds.has(entry.puzzle_id)) continue;
+    const pairKey = `${entry.puzzle_id}|${entry.theme_name}`;
+    if (seenThemePairs.has(pairKey)) continue;
+    seenThemePairs.add(pairKey);
+    dedupedThemes.push(entry);
+  }
+
+  const seenOpeningPairs = new Set<string>();
+  const dedupedOpenings: PuzzleOpeningData[] = [];
+  for (const entry of puzzleOpenings) {
+    if (!validPuzzleIds.has(entry.puzzle_id)) continue;
+    const pairKey = `${entry.puzzle_id}|${entry.opening_name}`;
+    if (seenOpeningPairs.has(pairKey)) continue;
+    seenOpeningPairs.add(pairKey);
+    dedupedOpenings.push(entry);
+  }
+
+  return {
+    puzzles: [...puzzleMap.values()],
+    puzzleThemes: dedupedThemes,
+    puzzleOpenings: dedupedOpenings,
+  };
+}
+
 async function importPuzzles(csvPath: string): Promise<void> {
   console.log(`Starting import from: ${csvPath}`);
   console.log(`Batch size: ${BATCH_SIZE}`);
@@ -390,6 +448,7 @@ async function importPuzzles(csvPath: string): Promise<void> {
     const themesByPuzzle = new Map<string, string>();
     const openingsByPuzzle = new Map<string, string>();
     let totalRows = 0;
+    let skippedRows = 0;
     const startTime = Date.now();
 
     await pool.query("TRUNCATE TABLE raw_puzzles, puzzle_themes, puzzle_openings, themes, openings, puzzles RESTART IDENTITY");
@@ -397,10 +456,20 @@ async function importPuzzles(csvPath: string): Promise<void> {
     // Create read stream and parse CSV
     const stream = fs
       .createReadStream(csvPath)
-      .pipe(csvParser());
+      .pipe(csvParser({ headers: CSV_HEADERS, skipLines: 1 }));
 
     for await (const row of stream) {
+      const candidateId = String((row as Record<string, unknown>).PuzzleId || "").trim();
+      if (!candidateId || candidateId === "PuzzleId") {
+        skippedRows++;
+        continue;
+      }
+
       const { puzzle, puzzleThemes, puzzleOpenings, themesRaw, openingTagsRaw } = parseRow(row as PuzzleRow);
+      if (!puzzle.puzzle_id) {
+        skippedRows++;
+        continue;
+      }
 
       puzzleBatch.push(puzzle);
       puzzleThemeBatch.push(...puzzleThemes);
@@ -411,13 +480,14 @@ async function importPuzzles(csvPath: string): Promise<void> {
 
       // Insert batch when it reaches the batch size
       if (puzzleBatch.length >= BATCH_SIZE) {
+        const prepared = prepareBatch(puzzleBatch, puzzleThemeBatch, puzzleOpeningBatch);
         const client = await pool.connect();
         try {
           await client.query("BEGIN");
-          await upsertRawPuzzles(client, puzzleBatch, themesByPuzzle, openingsByPuzzle);
-          await upsertPuzzlesBatch(client, puzzleBatch);
-          await upsertThemesAndJoin(client, puzzleThemeBatch);
-          await upsertOpeningsAndJoin(client, puzzleOpeningBatch);
+          await upsertRawPuzzles(client, prepared.puzzles, themesByPuzzle, openingsByPuzzle);
+          await upsertPuzzlesBatch(client, prepared.puzzles);
+          await upsertThemesAndJoin(client, prepared.puzzleThemes);
+          await upsertOpeningsAndJoin(client, prepared.puzzleOpenings);
           await client.query("COMMIT");
         } catch (error) {
           await client.query("ROLLBACK");
@@ -445,13 +515,14 @@ async function importPuzzles(csvPath: string): Promise<void> {
 
     // Insert remaining rows
     if (puzzleBatch.length > 0) {
+      const prepared = prepareBatch(puzzleBatch, puzzleThemeBatch, puzzleOpeningBatch);
       const client = await pool.connect();
       try {
         await client.query("BEGIN");
-        await upsertRawPuzzles(client, puzzleBatch, themesByPuzzle, openingsByPuzzle);
-        await upsertPuzzlesBatch(client, puzzleBatch);
-        await upsertThemesAndJoin(client, puzzleThemeBatch);
-        await upsertOpeningsAndJoin(client, puzzleOpeningBatch);
+        await upsertRawPuzzles(client, prepared.puzzles, themesByPuzzle, openingsByPuzzle);
+        await upsertPuzzlesBatch(client, prepared.puzzles);
+        await upsertThemesAndJoin(client, prepared.puzzleThemes);
+        await upsertOpeningsAndJoin(client, prepared.puzzleOpenings);
         await client.query("COMMIT");
       } catch (error) {
         await client.query("ROLLBACK");
@@ -466,6 +537,7 @@ async function importPuzzles(csvPath: string): Promise<void> {
     console.log("=".repeat(50));
     console.log("Import completed successfully!");
     console.log(`Total puzzles imported: ${totalRows.toLocaleString()}`);
+    console.log(`Skipped malformed/header rows: ${skippedRows.toLocaleString()}`);
     console.log(`Total time: ${totalTime.toFixed(2)} seconds`);
     console.log(
       `Average rate: ${Math.round(totalRows / totalTime).toLocaleString()} rows/sec`

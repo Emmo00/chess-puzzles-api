@@ -376,6 +376,42 @@ async function createTables() {
   `);
 }
 
+function isSchemaPermissionError(error: unknown): boolean {
+  const pgError = error as { code?: string; message?: string };
+  return pgError?.code === "42501" && /schema public/i.test(pgError?.message || "");
+}
+
+function resolveSchemaName(candidate: string | undefined): string | null {
+  if (!candidate) return null;
+  return /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(candidate) ? candidate : null;
+}
+
+async function ensureWritableSchema() {
+  const configuredSchema = resolveSchemaName(
+    process.env.PGSCHEMA || process.env.DB_SCHEMA || process.env.PGUSER || process.env.DB_USER
+  );
+
+  let schemaName = configuredSchema;
+  if (!schemaName) {
+    const result = await pool.query<{ current_user: string }>("SELECT current_user");
+    schemaName = resolveSchemaName(result.rows[0]?.current_user) || "public";
+  }
+
+  if (schemaName !== "public") {
+    await pool.query(`CREATE SCHEMA IF NOT EXISTS ${schemaName}`);
+  }
+}
+
+async function resetExistingData() {
+  // Fall back to DML-only cleanup for environments where CREATE/DROP is restricted.
+  await pool.query("DELETE FROM puzzle_openings");
+  await pool.query("DELETE FROM puzzle_themes");
+  await pool.query("DELETE FROM openings");
+  await pool.query("DELETE FROM themes");
+  await pool.query("DELETE FROM puzzles");
+  await pool.query("DELETE FROM api_keys");
+}
+
 async function seedData() {
   // Insert test API key
   await pool.query(
@@ -471,8 +507,20 @@ beforeAll(async () => {
     await pool.query("SELECT 1");
     console.log("Database connected successfully");
 
-    // Create tables and seed data
-    await createTables();
+    await ensureWritableSchema();
+
+    // Prefer isolated schema recreation; fall back when schema DDL is not allowed.
+    try {
+      await createTables();
+    } catch (error) {
+      if (isSchemaPermissionError(error)) {
+        console.log("Schema DDL permission unavailable, falling back to reseeding existing tables");
+        await resetExistingData();
+      } else {
+        throw error;
+      }
+    }
+
     await seedData();
     console.log(`Seeded ${mockPuzzles.length} test puzzles`);
   } catch (error) {
@@ -484,7 +532,15 @@ beforeAll(async () => {
 // Global teardown - runs once after all tests
 afterAll(async () => {
   try {
-    await cleanupTables();
+    try {
+      await cleanupTables();
+    } catch (error) {
+      if (isSchemaPermissionError(error)) {
+        await resetExistingData();
+      } else {
+        throw error;
+      }
+    }
     await pool.end();
     console.log("Database cleanup complete");
   } catch (error) {

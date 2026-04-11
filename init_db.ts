@@ -117,6 +117,8 @@ async function initializeDatabase(): Promise<void> {
     const pgError = error as { code?: string };
     if (pgError.code === "42P04") {
       console.log(`Database '${dbName}' already exists`);
+    } else if (pgError.code === "42501") {
+      console.log("No CREATE DATABASE privilege; attempting to use existing target database");
     } else {
       throw error;
     }
@@ -126,6 +128,7 @@ async function initializeDatabase(): Promise<void> {
 
   try {
     await appClient.connect();
+    console.log(`Connected to target database '${dbName}'`);
     await appClient.query(SCHEMA_SQL);
 
     console.log("Schema initialized successfully");
