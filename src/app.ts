@@ -12,10 +12,212 @@ app.use(pinoHttp({ logger, autoLogging: process.env.NODE_ENV !== "test" }));
 app.use(cors());
 app.use(express.json());
 
-// Authentication middleware - applies to all routes
-app.use(authMiddleware);
+const landingPageHtml = `<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<title>Chess Puzzles API</title>
+	<link rel="preconnect" href="https://fonts.googleapis.com" />
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+	<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;700;800&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet" />
+	<style>
+		:root {
+			--ink: #101010;
+			--paper: #fffdf4;
+			--accent-a: #ff5d47;
+			--accent-b: #22d17a;
+			--accent-c: #3a66ff;
+			--accent-d: #ffd432;
+			--card-shadow: 8px 8px 0 var(--ink);
+			--border: 4px solid var(--ink);
+		}
+
+		* { box-sizing: border-box; }
+
+		body {
+			margin: 0;
+			color: var(--ink);
+			font-family: "Bricolage Grotesque", sans-serif;
+			background:
+				radial-gradient(circle at 18% 20%, rgba(255, 93, 71, 0.2) 0%, transparent 45%),
+				radial-gradient(circle at 80% 10%, rgba(34, 209, 122, 0.18) 0%, transparent 44%),
+				radial-gradient(circle at 82% 84%, rgba(58, 102, 255, 0.14) 0%, transparent 48%),
+				var(--paper);
+			min-height: 100vh;
+		}
+
+		.wrap {
+			max-width: 1100px;
+			margin: 0 auto;
+			padding: 24px;
+		}
+
+		.hero {
+			border: var(--border);
+			box-shadow: var(--card-shadow);
+			background: linear-gradient(135deg, #fff 0%, #fff9db 70%);
+			padding: 28px;
+			transform: rotate(-0.6deg);
+			animation: settle 500ms ease-out forwards;
+			opacity: 0;
+		}
+
+		.tag {
+			display: inline-block;
+			border: 3px solid var(--ink);
+			box-shadow: 4px 4px 0 var(--ink);
+			background: var(--accent-d);
+			padding: 6px 10px;
+			font: 700 12px/1 "IBM Plex Mono", monospace;
+			letter-spacing: 0.08em;
+			text-transform: uppercase;
+		}
+
+		h1 {
+			margin: 14px 0 10px;
+			font-size: clamp(2rem, 4vw, 3.4rem);
+			line-height: 1;
+			text-transform: uppercase;
+		}
+
+		.hero p {
+			margin: 0;
+			font-size: clamp(1rem, 2.2vw, 1.25rem);
+			max-width: 65ch;
+		}
+
+		.grid {
+			margin-top: 24px;
+			display: grid;
+			gap: 20px;
+			grid-template-columns: repeat(12, 1fr);
+		}
+
+		.card {
+			border: var(--border);
+			box-shadow: var(--card-shadow);
+			background: #fff;
+			padding: 18px;
+			opacity: 0;
+			transform: translateY(14px);
+			animation: rise 400ms ease-out forwards;
+		}
+
+		.card:nth-child(1) { animation-delay: 120ms; }
+		.card:nth-child(2) { animation-delay: 220ms; }
+
+		.card h2 {
+			margin: 0 0 10px;
+			font-size: 1.1rem;
+			text-transform: uppercase;
+			letter-spacing: 0.03em;
+		}
+
+		.api { grid-column: span 7; }
+		.examples { grid-column: span 5; }
+
+		ul {
+			margin: 0;
+			padding-left: 18px;
+			line-height: 1.55;
+		}
+
+		.pill {
+			display: inline-block;
+			margin: 0 6px 6px 0;
+			border: 2px solid var(--ink);
+			background: var(--accent-b);
+			box-shadow: 3px 3px 0 var(--ink);
+			padding: 4px 8px;
+			font: 600 0.8rem/1.2 "IBM Plex Mono", monospace;
+		}
+
+		pre {
+			margin: 10px 0 0;
+			padding: 12px;
+			background: #111;
+			color: #f7f4ea;
+			border: 3px solid var(--ink);
+			overflow-x: auto;
+			font: 400 0.85rem/1.4 "IBM Plex Mono", monospace;
+		}
+
+		code { font-family: "IBM Plex Mono", monospace; }
+
+		.footer {
+			margin-top: 20px;
+			border: var(--border);
+			background: var(--accent-c);
+			color: #fff;
+			box-shadow: var(--card-shadow);
+			padding: 12px 16px;
+			font: 600 0.95rem/1.4 "IBM Plex Mono", monospace;
+		}
+
+		@keyframes settle {
+			to { opacity: 1; transform: rotate(0deg); }
+		}
+
+		@keyframes rise {
+			to { opacity: 1; transform: translateY(0); }
+		}
+
+		@media (max-width: 900px) {
+			.api, .examples { grid-column: span 12; }
+			.wrap { padding: 16px; }
+			.hero { padding: 20px; }
+		}
+	</style>
+</head>
+<body>
+	<main class="wrap">
+		<section class="hero">
+			<span class="tag">Chess Data API</span>
+			<h1>Chess Puzzles</h1>
+			<p>Authenticated API for querying puzzles by ID, random count, rating range, themes, and player-move depth.</p>
+		</section>
+
+		<section class="grid">
+			<article class="card api">
+				<h2>Base Endpoint</h2>
+				<p><code>GET /puzzles</code></p>
+				<div>
+					<span class="pill">x-api-key: your-key</span>
+					<span class="pill">Authorization: Bearer your-key</span>
+				</div>
+				<h2 style="margin-top:16px;">Query Parameters</h2>
+				<ul>
+					<li><code>id</code>: fetch one puzzle by ID (overrides filters)</li>
+					<li><code>count</code>: number of random puzzles to return (1-100)</li>
+					<li><code>rating</code>: exact value or range (example: <code>1500</code>, <code>1200-1800</code>)</li>
+					<li><code>themes</code>: JSON array (example: <code>["fork","pin"]</code>)</li>
+					<li><code>themesType</code>: <code>ANY</code> or <code>ALL</code> when multiple themes are sent</li>
+					<li><code>playerMoves</code>: exact value or range (example: <code>2</code>, <code>2-4</code>)</li>
+				</ul>
+			</article>
+
+			<article class="card examples">
+				<h2>Example Requests</h2>
+				<pre>curl -H "x-api-key: your-key" \
+	"http://localhost:3000/puzzles?count=5"</pre>
+				<pre>curl -H "x-api-key: your-key" \
+	"http://localhost:3000/puzzles?id=00sHx"</pre>
+				<pre>curl -H "x-api-key: your-key" \
+	"http://localhost:3000/puzzles?count=10&rating=1400-1800&themes=[\"fork\",\"middlegame\"]&themesType=ANY"</pre>
+			</article>
+		</section>
+
+		<p class="footer">Tip: use /puzzles with count or id. All API calls require a key.</p>
+	</main>
+</body>
+</html>`;
+
+app.get("/", (_req, res) => {
+	res.type("html").send(landingPageHtml);
+});
 
 // Routes
-app.use("/", puzzlesRouter);
+app.use("/puzzles", authMiddleware, puzzlesRouter);
 
 export default app;

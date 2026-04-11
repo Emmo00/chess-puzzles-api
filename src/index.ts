@@ -10,7 +10,8 @@ const PORT = parseInt(process.env.PORT || "3000", 10);
 app.listen(PORT, () => {
   logger.info(`Chess Puzzles API running on http://localhost:${PORT}`);
   logger.info("Available endpoints:");
-  logger.info("  GET /              - Get puzzles");
+  logger.info("  GET /              - Landing page");
+  logger.info("  GET /puzzles       - Get puzzles");
   logger.info("Query parameters:");
   logger.info("  id          - Get single puzzle by ID");
   logger.info("  count       - Number of random puzzles (1-100, required if no id)");

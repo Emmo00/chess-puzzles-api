@@ -79,6 +79,9 @@ bun start
 
 The API will be available at `http://localhost:3000`.
 
+- Landing page: `GET /`
+- API endpoint: `GET /puzzles`
+
 ## API Reference
 
 ### GET /puzzles
@@ -102,32 +105,32 @@ Query chess puzzles with various filters.
 
 **Get a specific puzzle:**
 ```bash
-curl "http://localhost:3000/puzzles?id=00008"
+curl -H "x-api-key: your-api-key" "http://localhost:3000/puzzles?id=00008"
 ```
 
 **Get 10 random puzzles:**
 ```bash
-curl "http://localhost:3000/puzzles?count=10"
+curl -H "x-api-key: your-api-key" "http://localhost:3000/puzzles?count=10"
 ```
 
 **Get puzzles with rating between 1500-1800:**
 ```bash
-curl "http://localhost:3000/puzzles?count=10&rating=1500-1800"
+curl -H "x-api-key: your-api-key" "http://localhost:3000/puzzles?count=10&rating=1500-1800"
 ```
 
 **Get puzzles with fork AND pin themes:**
 ```bash
-curl "http://localhost:3000/puzzles?count=10&themes=[\"fork\",\"pin\"]&themesType=ALL"
+curl -H "x-api-key: your-api-key" "http://localhost:3000/puzzles?count=10&themes=[\"fork\",\"pin\"]&themesType=ALL"
 ```
 
 **Get puzzles with fork OR pin themes:**
 ```bash
-curl "http://localhost:3000/puzzles?count=10&themes=[\"fork\",\"pin\"]&themesType=ANY"
+curl -H "x-api-key: your-api-key" "http://localhost:3000/puzzles?count=10&themes=[\"fork\",\"pin\"]&themesType=ANY"
 ```
 
 **Get puzzles with exactly 3 player moves:**
 ```bash
-curl "http://localhost:3000/puzzles?count=10&playerMoves=3"
+curl -H "x-api-key: your-api-key" "http://localhost:3000/puzzles?count=10&playerMoves=3"
 ```
 
 #### Response
