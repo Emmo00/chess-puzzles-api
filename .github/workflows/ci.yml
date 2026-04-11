@@ -11,18 +11,19 @@ jobs:
     runs-on: ubuntu-latest
 
     services:
-      mysql:
-        image: mysql:8.0
+      postgres:
+        image: postgres:16
         env:
-          MYSQL_ROOT_PASSWORD: testpassword
-          MYSQL_DATABASE: chess_puzzles_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: testpassword
+          POSTGRES_DB: chess_puzzles_test
         ports:
-          - 3306:3306
+          - 5432:5432
         options: >-
-          --health-cmd="mysqladmin ping"
+          --health-cmd="pg_isready -U postgres -d chess_puzzles_test"
           --health-interval=10s
           --health-timeout=5s
-          --health-retries=5
+          --health-retries=10
 
     steps:
       - name: Checkout repository
@@ -36,30 +37,30 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Wait for MySQL to be ready
+      - name: Wait for PostgreSQL to be ready
         run: |
-          until mysqladmin ping -h 127.0.0.1 -P 3306 -u root -ptestpassword --silent; do
-            echo "Waiting for MySQL..."
+          until (echo > /dev/tcp/127.0.0.1/5432) >/dev/null 2>&1; do
+            echo "Waiting for PostgreSQL..."
             sleep 2
           done
 
       - name: Run tests
         env:
-          DB_HOST: 127.0.0.1
-          DB_PORT: 3306
-          DB_USER: root
-          DB_PASSWORD: testpassword
-          DB_NAME: chess_puzzles_test
+          PGHOST: 127.0.0.1
+          PGPORT: 5432
+          PGUSER: postgres
+          PGPASSWORD: testpassword
+          PGDATABASE: chess_puzzles_test
           PORT: 3001
         run: bun test
 
       - name: Run tests with coverage
         env:
-          DB_HOST: 127.0.0.1
-          DB_PORT: 3306
-          DB_USER: root
-          DB_PASSWORD: testpassword
-          DB_NAME: chess_puzzles_test
+          PGHOST: 127.0.0.1
+          PGPORT: 5432
+          PGUSER: postgres
+          PGPASSWORD: testpassword
+          PGDATABASE: chess_puzzles_test
           PORT: 3001
         run: bun run test:coverage
 
