@@ -7,7 +7,7 @@
     "init-db": "bun run init_db.ts",
     "import": "bun run import_puzzles.ts",
     "seed-api-keys": "bun run seed_api_keys.ts",
-    "start": "bun run src/index.ts --watch",
+    "start": "bun run src/index.ts",
     "test": "jest",
     "test:coverage": "jest --coverage"
   },
