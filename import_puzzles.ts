@@ -104,6 +104,36 @@ const CSV_HEADERS = [
   "OpeningTags",
 ];
 
+function parseImportLimitArg(argv: string[]): number | undefined {
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+
+    if (arg === "--limit" || arg === "-n") {
+      const rawValue = argv[i + 1];
+      if (!rawValue) {
+        throw new Error("Missing value for --limit. Example: bun import -- --limit 10000");
+      }
+
+      const parsed = parseInt(rawValue, 10);
+      if (Number.isNaN(parsed) || parsed <= 0) {
+        throw new Error(`Invalid --limit value '${rawValue}'. Use a positive integer.`);
+      }
+
+      return parsed;
+    }
+
+    // Support simple positional usage: bun run import_puzzles.ts 10000
+    if (/^\d+$/.test(arg)) {
+      const parsed = parseInt(arg, 10);
+      if (parsed > 0) {
+        return parsed;
+      }
+    }
+  }
+
+  return undefined;
+}
+
 interface PuzzleRow {
   PuzzleId: string;
   FEN: string;
@@ -428,9 +458,12 @@ function prepareBatch(
   };
 }
 
-async function importPuzzles(csvPath: string): Promise<void> {
+async function importPuzzles(csvPath: string, maxRows?: number): Promise<void> {
   console.log(`Starting import from: ${csvPath}`);
   console.log(`Batch size: ${BATCH_SIZE}`);
+  if (maxRows !== undefined) {
+    console.log(`Import limit: ${maxRows.toLocaleString()} puzzle(s)`);
+  }
   console.log("");
 
   const pool = new Pool(dbConfig);
@@ -477,6 +510,10 @@ async function importPuzzles(csvPath: string): Promise<void> {
       themesByPuzzle.set(puzzle.puzzle_id, themesRaw);
       openingsByPuzzle.set(puzzle.puzzle_id, openingTagsRaw);
       totalRows++;
+
+      if (maxRows !== undefined && totalRows >= maxRows) {
+        break;
+      }
 
       // Insert batch when it reaches the batch size
       if (puzzleBatch.length >= BATCH_SIZE) {
@@ -576,8 +613,9 @@ async function importPuzzles(csvPath: string): Promise<void> {
 
 // Main entry point
 const csvPath = path.join(__dirname, "puzzles.csv");
+const importLimit = parseImportLimitArg(process.argv.slice(2));
 
-importPuzzles(csvPath).catch((error) => {
+importPuzzles(csvPath, importLimit).catch((error) => {
   console.error("Import failed:", error);
   process.exit(1);
 });
