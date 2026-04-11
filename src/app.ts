@@ -214,7 +214,7 @@ const landingPageHtml = `<!doctype html>
 </html>`;
 
 app.get("/", (_req, res) => {
-	res.type("html").send(landingPageHtml);
+	res.type("html").send(landingPageHtml).end();
 });
 
 // Routes
