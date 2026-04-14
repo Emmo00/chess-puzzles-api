@@ -1,232 +1,255 @@
 # Chess Puzzles API
 
-A RESTful API for querying chess puzzles from the Lichess puzzle database. Built with TypeScript, Express.js, and MySQL.
+REST API for querying chess puzzles from the Lichess puzzle dataset.
 
-## Features
+Built with Bun, TypeScript, Express, and PostgreSQL.
 
-- Query puzzles by ID
-- Filter puzzles by rating range
-- Filter puzzles by themes (supports AND/OR logic)
-- Filter by number of player moves
-- Randomized results with configurable count
-- Comprehensive test suite
+## What It Supports
 
-## Prerequisites
+- API-key protected access to puzzle endpoints
+- Fetch a single puzzle by id
+- Fetch random puzzle sets by count (clamped to 1-100)
+- Filter by rating (exact or range)
+- Filter by themes with ANY/ALL logic
+- Filter by player move count (exact or range)
+- CSV import pipeline for large puzzle datasets
+- Jest + Supertest test suite
 
-- [Bun](https://bun.sh/) (runtime)
-- MySQL 8.0+
-- [Lichess puzzle CSV](https://database.lichess.org/#puzzles) (optional, for importing puzzles)
+## Tech Stack
 
-## Installation
+- Runtime: Bun
+- Language: TypeScript
+- Server: Express
+- DB: PostgreSQL (`pg`)
+- Logging: Pino / pino-http
+
+## Quick Start
+
+### 1. Install dependencies
 
 ```bash
-# Clone the repository
-git clone https://github.com/your-username/chess-puzzles-api.git
-cd chess-puzzles-api
-
-# Install dependencies
 bun install
+```
 
-# Copy environment file
+### 2. Configure environment
+
+```bash
 cp .env.example .env
 ```
 
-## Database Setup
+Update `.env` with your PostgreSQL credentials.
 
-### Create Database and User
+Recommended variables (native PostgreSQL names):
 
-```sql
--- Connect to MySQL as root
-mysql -u root -p
-
--- Create database
-CREATE DATABASE chess_puzzles CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-
--- Create user
-CREATE USER 'chess_api'@'localhost' IDENTIFIED BY 'your_secure_password';
-GRANT ALL PRIVILEGES ON chess_puzzles.* TO 'chess_api'@'localhost';
-FLUSH PRIVILEGES;
+```env
+PGHOST=localhost
+PGPORT=5432
+PGUSER=postgres
+PGPASSWORD=postgres
+PGDATABASE=chess_puzzles
+PORT=3000
+LOG_LEVEL=info
 ```
 
-### Import Puzzles
+Notes:
 
-Download the puzzle CSV from [Lichess](https://database.lichess.org/#puzzles) and place it in the project root as `puzzles.csv`.
+- The app also accepts legacy `DB_*` names (`DB_HOST`, `DB_PORT`, etc.).
+- If `PGPORT` is unset and `DB_PORT=3306`, the code falls back to `5432`.
+
+### 3. Initialize database schema
+
+```bash
+bun run init-db
+```
+
+### 4. Seed at least one API key
+
+```bash
+bun run seed-api-keys -- --key dev-local-key --description "Local development key"
+```
+
+### 5. Import puzzle data
+
+By default, import reads `puzzles.csv` from the project root:
 
 ```bash
 bun run import
 ```
 
-## Configuration
+Optional limited import (useful for local testing):
 
-Create a `.env` file with the following variables:
+```bash
+bun run import -- --limit 10000
+```
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `DB_HOST` | MySQL host | `localhost` |
-| `DB_PORT` | MySQL port | `3306` |
-| `DB_USER` | MySQL username | - |
-| `DB_PASSWORD` | MySQL password | - |
-| `DB_NAME` | Database name | `chess_puzzles` |
-| `PORT` | API server port | `3000` |
-
-## Usage
-
-### Start the Server
+### 6. Start API server
 
 ```bash
 bun start
 ```
 
-The API will be available at `http://localhost:3000`.
+Server default: `http://localhost:3000`
 
-- Landing page: `GET /`
-- API endpoint: `GET /puzzles`
+## Authentication
 
-## API Reference
+`GET /` is public (landing page).
+
+All `/puzzles` routes require an API key using one of:
+
+- `x-api-key: <your-key>`
+- `Authorization: Bearer <your-key>`
+
+## API Endpoints
+
+### GET /
+
+Public landing page with usage information.
 
 ### GET /puzzles
 
-Query chess puzzles with various filters.
+Returns puzzles that match filters.
 
-#### Query Parameters
+Query parameters:
 
 | Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `id` | string | No* | Get a specific puzzle by ID |
-| `count` | number | No* | Number of puzzles to return (1-100) |
-| `rating` | string | No | Rating filter (e.g., `1500`, `1200-1800`) |
-| `themes` | string | No | JSON array of themes (e.g., `["fork","pin"]`) |
-| `themesType` | string | No | `ANY` or `ALL` (required if multiple themes) |
-| `playerMoves` | string | No | Player moves filter (e.g., `3`, `2-5`) |
+|---|---|---|---|
+| `id` | string | No* | Return one puzzle by id. If set, other filters are ignored. |
+| `count` | number | No* | Number of random puzzles to return. Clamped to `1..100`. |
+| `rating` | string | No | Exact rating (`1500`) or range (`1200-1800`). |
+| `themes` | string | No | JSON array string, e.g. `["fork","pin"]`. |
+| `themesType` | string | No** | Theme matching mode: `ANY` or `ALL` (`ONE` is also accepted as ANY-like behavior). |
+| `playerMoves` | string | No | Exact move count (`2`) or range (`2-4`). |
 
-\* Either `id` or `count` is required.
+- `*` You must provide either `id` or `count`.
+- `**` Required when sending more than one theme.
 
-#### Examples
+### Request examples
 
-**Get a specific puzzle:**
+Get by id:
+
 ```bash
-curl -H "x-api-key: your-api-key" "http://localhost:3000/puzzles?id=00008"
+curl -H "x-api-key: dev-local-key" \
+  "http://localhost:3000/puzzles?id=TEST004"
 ```
 
-**Get 10 random puzzles:**
+Get random set:
+
 ```bash
-curl -H "x-api-key: your-api-key" "http://localhost:3000/puzzles?count=10"
+curl -H "x-api-key: dev-local-key" \
+  "http://localhost:3000/puzzles?count=10"
 ```
 
-**Get puzzles with rating between 1500-1800:**
+Get with rating + themes + playerMoves:
+
 ```bash
-curl -H "x-api-key: your-api-key" "http://localhost:3000/puzzles?count=10&rating=1500-1800"
+curl -H "x-api-key: dev-local-key" \
+  "http://localhost:3000/puzzles?count=10&rating=1400-1800&themes=[\"fork\",\"middlegame\"]&themesType=ANY&playerMoves=2-4"
 ```
 
-**Get puzzles with fork AND pin themes:**
-```bash
-curl -H "x-api-key: your-api-key" "http://localhost:3000/puzzles?count=10&themes=[\"fork\",\"pin\"]&themesType=ALL"
-```
-
-**Get puzzles with fork OR pin themes:**
-```bash
-curl -H "x-api-key: your-api-key" "http://localhost:3000/puzzles?count=10&themes=[\"fork\",\"pin\"]&themesType=ANY"
-```
-
-**Get puzzles with exactly 3 player moves:**
-```bash
-curl -H "x-api-key: your-api-key" "http://localhost:3000/puzzles?count=10&playerMoves=3"
-```
-
-#### Response
+### Response shape
 
 ```json
 {
   "puzzles": [
     {
-      "puzzleId": "00008",
-      "fen": "r1bqkb1r/pppp1ppp/2n2n2/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 4 4",
-      "moves": "f6h5 c4f7",
-      "rating": 1356,
-      "ratingDeviation": 76,
-      "popularity": 95,
-      "nbPlays": 156847,
-      "themes": ["mate", "mateIn1", "short"],
-      "gameUrl": "https://lichess.org/yyznGmXs/white#7",
-      "openingTags": "Italian_Game",
-      "playerMoves": 1
+      "puzzleid": "TEST004",
+      "fen": "r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/3P1N2/PPP2PPP/RNBQK2R w KQkq - 0 5",
+      "moves": ["c1g5", "h7h6", "g5f6", "d8f6"],
+      "rating": 1300,
+      "ratingdeviation": 55,
+      "popularity": 88,
+      "themes": ["pin", "advantage", "middlegame"],
+      "opening tags": ["Italian_Game", "Italian_Game_Classical_Variation"]
     }
-  ],
-  "count": 1
+  ]
 }
 ```
 
-### GET /puzzles/themes
+## Error Responses
 
-Get all available puzzle themes.
+Common errors:
 
-```bash
-curl "http://localhost:3000/puzzles/themes"
-```
+- `401 Unauthorized`
+  - Missing API key
+- `403 Forbidden`
+  - Invalid or inactive API key
+- `400 Bad Request`
+  - Missing both `id` and `count`
+  - Unknown puzzle id
+  - Invalid `themes` JSON format
+  - Missing `themesType` for multiple themes
+- `500 Internal Server Error`
+  - Unexpected server/database failure
 
-#### Response
+## Scripts
 
-```json
-{
-  "themes": [
-    "advancedPawn",
-    "advantage",
-    "anapiesis",
-    "arabianMate",
-    ...
-  ],
-  "count": 62
-}
-```
+Defined in `package.json`:
+
+- `bun run init-db` - create DB (if allowed), schema, and indexes
+- `bun run import` - import `puzzles.csv` into normalized tables
+- `bun run seed-api-keys` - seed one or more API keys
+- `bun start` - run API server
+- `bun test` - run Jest tests
+- `bun run test:coverage` - run tests with coverage
 
 ## Testing
 
-```bash
-# Run tests
-bun test
+Run tests:
 
-# Run tests with coverage
+```bash
+bun test
+```
+
+Run coverage:
+
+```bash
 bun run test:coverage
 ```
 
-## Project Structure
+Tests rely on PostgreSQL and auto-seed test data in `src/tests/setup.ts`.
 
-```
-chess-puzzles-api/
-├── src/
-│   ├── index.ts          # Server entry point
-│   ├── app.ts            # Express app setup
-│   ├── db.ts             # Database connection
-│   ├── types.ts          # TypeScript interfaces
-│   ├── routes/
-│   │   └── puzzles.ts    # Puzzle routes
-│   └── tests/
-│       ├── setup.ts      # Test setup & mock data
-│       └── puzzles.test.ts
-├── import_puzzles.ts     # CSV import script
-├── puzzles.csv           # Lichess puzzle database
-├── package.json
-├── tsconfig.json
-└── .env.example
-```
+## Data Import Notes
+
+- Import expects a Lichess puzzle CSV named `puzzles.csv` in the repo root.
+- A compressed file `puzzles.csv.zst` can be kept in-repo; decompress it before import if needed.
+- Import truncates and rebuilds puzzle-related tables before loading fresh data.
 
 ## CI/CD
 
-The project includes a GitHub Actions workflow that:
+GitHub Actions workflow (`.github/workflows/ci.yml`) runs:
 
-1. **Tests** - Runs the test suite against a MySQL service container
-2. **Lint** - TypeScript type checking
-3. **Build** - Compiles TypeScript
-4. **Deploy** - Deploys to production server via SSH (on push to main/master)
+1. Tests (with PostgreSQL service)
+2. Coverage
+3. TypeScript type-check
+4. Build (`bun run tsc`)
+5. Deploy on push to `main`/`master` (SSH action)
 
-### Required GitHub Secrets
+Required deploy secrets:
 
-| Secret | Description |
-|--------|-------------|
-| `SSH_HOST` | Production server hostname/IP |
-| `SSH_USERNAME` | SSH username |
-| `SSH_PRIVATE_KEY` | SSH private key |
-| `SSH_PORT` | SSH port (usually 22) |
+- `SSH_HOST`
+- `SSH_USERNAME`
+- `SSH_PRIVATE_KEY`
+
+## Project Structure
+
+```text
+src/
+  app.ts                # Express app + landing page + middleware setup
+  index.ts              # Server bootstrap
+  db.ts                 # PostgreSQL pool setup
+  middleware/
+    auth.ts             # API key validation middleware
+  routes/
+    puzzles.ts          # /puzzles endpoint logic
+  tests/
+    setup.ts            # Test DB setup + seed data
+    puzzles.test.ts     # Integration tests
+
+init_db.ts              # DB/schema bootstrap script
+import_puzzles.ts       # CSV import pipeline
+seed_api_keys.ts        # API key seeding script
+DOCUMENTATION.md        # Extended endpoint documentation
+```
 
 ## License
 
