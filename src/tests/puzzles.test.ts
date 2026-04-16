@@ -1,6 +1,14 @@
 import request from "supertest";
 import "./setup";
+import { settleX402Request } from "../services/x402";
+
+jest.mock("../services/x402", () => ({
+  settleX402Request: jest.fn(),
+}));
+
 import app from "../app";
+
+const mockedSettleX402Request = settleX402Request as jest.MockedFunction<typeof settleX402Request>;
 
 describe("Chess Puzzles API", () => {
   const apiKey = "test-api-key";
@@ -42,6 +50,94 @@ describe("Chess Puzzles API", () => {
         .get("/puzzles?count=1")
         .set("Authorization", `Bearer ${apiKey}`);
       expect(response.status).toBe(200);
+    });
+  });
+
+  describe("x402 endpoint", () => {
+    beforeEach(() => {
+      mockedSettleX402Request.mockReset();
+    });
+
+    it("returns 402 when request has no API key and no payment", async () => {
+      mockedSettleX402Request.mockResolvedValue({
+        status: 402,
+        responseHeaders: {
+          "x-payment-required": "true",
+        },
+        responseBody: {
+          error: "Payment required",
+        },
+      });
+
+      const response = await request(app).get("/puzzles/x402?count=1");
+
+      expect(response.status).toBe(402);
+      expect(response.headers["x-payment-required"]).toBe("true");
+      expect(response.body.error).toContain("Payment required");
+      expect(mockedSettleX402Request).toHaveBeenCalledTimes(1);
+    });
+
+    it("allows valid API key without payment on /puzzles/x402", async () => {
+      const response = await request(app)
+        .get("/puzzles/x402?count=1")
+        .set("x-api-key", apiKey);
+
+      expect(response.status).toBe(200);
+      expect(mockedSettleX402Request).not.toHaveBeenCalled();
+    });
+
+    it("allows successful x402 payment", async () => {
+      mockedSettleX402Request.mockResolvedValue({
+        status: 200,
+        responseHeaders: {
+          "x-payment-receipt": "settled",
+        },
+        responseBody: {
+          ok: true,
+        },
+      });
+
+      const response = await request(app).get("/puzzles/x402?count=1");
+
+      expect(response.status).toBe(200);
+      expect(response.headers["x-payment-receipt"]).toBe("settled");
+      expect(Array.isArray(response.body.puzzles)).toBe(true);
+      expect(typeof response.body.puzzles[0].cost).toBe("number");
+      expect(response.body.puzzles[0].cost).toBeGreaterThan(0);
+      expect(mockedSettleX402Request).toHaveBeenCalledTimes(1);
+    });
+
+    it("falls back to payment when API key is invalid", async () => {
+      mockedSettleX402Request.mockResolvedValue({
+        status: 200,
+        responseHeaders: {},
+        responseBody: {
+          ok: true,
+        },
+      });
+
+      const response = await request(app)
+        .get("/puzzles/x402?count=1")
+        .set("x-api-key", "invalid-key");
+
+      expect(response.status).toBe(200);
+      expect(mockedSettleX402Request).toHaveBeenCalledTimes(1);
+    });
+
+    it("returns 402 when payment settlement fails", async () => {
+      mockedSettleX402Request.mockResolvedValue({
+        status: 402,
+        responseHeaders: {},
+        responseBody: {
+          error: "Payment verification failed",
+        },
+      });
+
+      const response = await request(app).get("/puzzles/x402?count=1");
+
+      expect(response.status).toBe(402);
+      expect(response.body.error).toContain("Payment verification failed");
+      expect(mockedSettleX402Request).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -232,6 +328,19 @@ describe("Chess Puzzles API", () => {
 
       expect(response.status).toBe(200);
       expect(Array.isArray(response.body.puzzles)).toBe(true);
+    });
+
+    it("includes configurable per-puzzle cost", async () => {
+      const response = await request(app)
+        .get("/puzzles?count=3")
+        .set("x-api-key", apiKey);
+
+      expect(response.status).toBe(200);
+      expect(response.body.puzzles.length).toBeGreaterThan(0);
+      for (const puzzle of response.body.puzzles) {
+        expect(typeof puzzle.cost).toBe("number");
+        expect(puzzle.cost).toBeGreaterThan(0);
+      }
     });
   });
 });
