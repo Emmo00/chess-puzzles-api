@@ -50,6 +50,7 @@ PGPASSWORD=postgres
 PGDATABASE=chess_puzzles
 PORT=3000
 LOG_LEVEL=info
+PUBLIC_API_BASE_URL=https://api.yourdomain.com
 ```
 
 Notes:
@@ -103,6 +104,8 @@ bun start
 ```
 
 Server default: `http://localhost:3000`
+
+Docs and landing page examples use `PUBLIC_API_BASE_URL`.
 
 ## Authentication
 
@@ -158,45 +161,51 @@ Query parameters:
 
 ### Request examples
 
+Set base URL once (use your live API domain):
+
+```bash
+export PUBLIC_API_BASE_URL="https://api.yourdomain.com"
+```
+
 Get by id:
 
 ```bash
 curl -H "x-api-key: dev-local-key" \
-  "http://localhost:3000/puzzles?id=TEST004"
+  "$PUBLIC_API_BASE_URL/puzzles?id=TEST004"
 ```
 
 Get random set:
 
 ```bash
 curl -H "x-api-key: dev-local-key" \
-  "http://localhost:3000/puzzles?count=10"
+  "$PUBLIC_API_BASE_URL/puzzles?count=10"
 ```
 
 Pay-per-use flow (first call returns `402` challenge):
 
 ```bash
-curl "http://localhost:3000/puzzles/x402?count=10"
+curl "$PUBLIC_API_BASE_URL/puzzles/x402?count=10"
 ```
 
 Pay-per-use flow with signed payment data:
 
 ```bash
 curl -H "X-PAYMENT: <signed-payment-data>" \
-  "http://localhost:3000/puzzles/x402?count=10"
+  "$PUBLIC_API_BASE_URL/puzzles/x402?count=10"
 ```
 
 API key still works on x402 endpoint:
 
 ```bash
 curl -H "x-api-key: dev-local-key" \
-  "http://localhost:3000/puzzles/x402?count=10"
+  "$PUBLIC_API_BASE_URL/puzzles/x402?count=10"
 ```
 
 Get with rating + themes + playerMoves:
 
 ```bash
 curl -H "x-api-key: dev-local-key" \
-  "http://localhost:3000/puzzles?count=10&rating=1400-1800&themes=[\"fork\",\"middlegame\"]&themesType=ANY&playerMoves=2-4"
+  "$PUBLIC_API_BASE_URL/puzzles?count=10&rating=1400-1800&themes=[\"fork\",\"middlegame\"]&themesType=ANY&playerMoves=2-4"
 ```
 
 ### Response shape

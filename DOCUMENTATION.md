@@ -8,6 +8,8 @@ https://your-api-domain.com
 
 The root path (`GET /`) serves a web landing page with usage examples.
 
+Set `PUBLIC_API_BASE_URL` in your environment to control the live domain shown in root-page and README request examples.
+
 ## Authentication
 
 The API has two access paths:
