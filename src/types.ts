@@ -7,6 +7,7 @@ export interface Puzzle {
   popularity: number;
   themes: string[];
   "opening tags": string[];
+  cost: number;
 }
 
 export interface PuzzleResponse {

@@ -4,6 +4,7 @@ import pinoHttp from "pino-http";
 import puzzlesRouter from "./routes/puzzles";
 import logger from "./logger";
 import { authMiddleware } from "./middleware/auth";
+import { x402OrApiKeyMiddleware } from "./middleware/x402";
 
 const app = express();
 
@@ -175,17 +176,28 @@ const landingPageHtml = `<!doctype html>
 		<section class="hero">
 			<span class="tag">Chess Data API</span>
 			<h1>Chess Puzzles</h1>
-			<p>Authenticated API for querying puzzles by ID, random count, rating range, themes, and player-move depth.</p>
+			<p>Query puzzles by ID, random count, rating range, themes, and player-move depth. Access with API keys or pay-per-use over x402 on Celo stablecoins.</p>
 		</section>
 
 		<section class="grid">
 			<article class="card api">
-				<h2>Base Endpoint</h2>
-				<p><code>GET /puzzles</code></p>
+				<h2>Base Endpoints</h2>
+				<p><code>GET /puzzles</code> (API key required)</p>
+				<p><code>GET /puzzles/x402</code> (API key or x402 payment)</p>
 				<div>
 					<span class="pill">x-api-key: your-key</span>
 					<span class="pill">Authorization: Bearer your-key</span>
+					<span class="pill">x-payment: signed-payment</span>
+					<span class="pill">payment-signature: signed-payment</span>
 				</div>
+				<h2 style="margin-top:16px;">Access Modes</h2>
+				<ul>
+					<li><strong>API key mode</strong>: use <code>GET /puzzles</code> for existing key-based flows.</li>
+					<li><strong>x402 mode</strong>: use <code>GET /puzzles/x402</code> and pay a dynamic total based on <code>count × X402_PRICE_USD_PER_PUZZLE</code>.</li>
+					<li>Supported stablecoins: <code>USDC</code>, <code>USDT</code>, <code>USDm</code>.</li>
+					<li>Each puzzle object includes a <code>cost</code> field (USD per puzzle unit).</li>
+					<li>Clients can send API key on <code>/puzzles/x402</code> to skip payment.</li>
+				</ul>
 				<h2 style="margin-top:16px;">Query Parameters</h2>
 				<ul>
 					<li><code>id</code>: fetch one puzzle by ID (overrides filters)</li>
@@ -201,6 +213,9 @@ const landingPageHtml = `<!doctype html>
 				<h2>Example Requests</h2>
 				<pre>curl -H "x-api-key: your-key" \
 	"http://localhost:3000/puzzles?count=5"</pre>
+				<pre>curl "http://localhost:3000/puzzles/x402?count=5"</pre>
+				<pre>curl -H "x-payment: &lt;signed-payment&gt;" \
+	"http://localhost:3000/puzzles/x402?count=5"</pre>
 				<pre>curl -H "x-api-key: your-key" \
 	"http://localhost:3000/puzzles?id=00sHx"</pre>
 				<pre>curl -H "x-api-key: your-key" \
@@ -208,7 +223,7 @@ const landingPageHtml = `<!doctype html>
 			</article>
 		</section>
 
-		<p class="footer">Tip: use /puzzles with count or id. All API calls require a key.</p>
+		<p class="footer">Tip: /puzzles keeps strict API-key auth. /puzzles/x402 calculates payment dynamically from requested puzzle count.</p>
 	</main>
 </body>
 </html>`;
@@ -218,6 +233,7 @@ app.get("/", (_req, res) => {
 });
 
 // Routes
+app.use("/puzzles/x402", x402OrApiKeyMiddleware, puzzlesRouter);
 app.use("/puzzles", authMiddleware, puzzlesRouter);
 
 export default app;

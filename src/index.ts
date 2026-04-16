@@ -11,7 +11,8 @@ app.listen(PORT, () => {
   logger.info(`Chess Puzzles API running on http://localhost:${PORT}`);
   logger.info("Available endpoints:");
   logger.info("  GET /              - Landing page");
-  logger.info("  GET /puzzles       - Get puzzles");
+  logger.info("  GET /puzzles       - Get puzzles (API key required)");
+  logger.info("  GET /puzzles/x402  - Get puzzles (API key or x402 payment)");
   logger.info("Query parameters:");
   logger.info("  id          - Get single puzzle by ID");
   logger.info("  count       - Number of random puzzles (1-100, required if no id)");
