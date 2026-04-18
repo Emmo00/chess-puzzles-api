@@ -1,5 +1,4 @@
 import request from "supertest";
-import "./setup";
 import app from "../app";
 
 describe("Landing page base URL resolution", () => {
