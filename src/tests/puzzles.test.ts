@@ -1,18 +1,17 @@
 import request from "supertest";
 import "./setup";
-import { settleX402Request } from "../services/x402";
-
-jest.mock("../services/x402", () => ({
-  settleX402Request: jest.fn(),
-  getPuzzleUnitPriceUsd: () => 0.01,
-}));
+import * as x402Service from "../services/x402";
 
 import app from "../app";
 
-const mockedSettleX402Request = settleX402Request as jest.MockedFunction<typeof settleX402Request>;
+const mockedSettleX402Request = jest.spyOn(x402Service, "settleX402Request");
 
 describe("Chess Puzzles API", () => {
   const apiKey = "test-api-key";
+
+  afterAll(() => {
+    mockedSettleX402Request.mockRestore();
+  });
 
   describe("Landing page", () => {
     it("serves landing page at root without API key", async () => {
