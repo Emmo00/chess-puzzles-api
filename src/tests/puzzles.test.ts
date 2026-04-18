@@ -2,13 +2,10 @@ import request from "supertest";
 import "./setup";
 import { settleX402Request } from "../services/x402";
 
-jest.mock("../services/x402", () => {
-  const actual = jest.requireActual("../services/x402");
-  return {
-    ...actual,
-    settleX402Request: jest.fn(),
-  };
-});
+jest.mock("../services/x402", () => ({
+  settleX402Request: jest.fn(),
+  getPuzzleUnitPriceUsd: () => 0.01,
+}));
 
 import app from "../app";
 
