@@ -2,10 +2,11 @@ import { Router, Request, Response } from "express";
 import pool from "../db";
 import { Puzzle, PuzzleRow, PuzzleResponse } from "../types";
 import logger from "../logger";
+import { getPuzzleUnitPriceUsd } from "../services/x402";
 
 const router = Router();
 
-function transformPuzzle(row: PuzzleRow): Puzzle {
+function transformPuzzle(row: PuzzleRow, puzzleCostUsd: number): Puzzle {
   const movesValue = row.moves_json;
   const parsedMoves = Array.isArray(movesValue)
     ? movesValue
@@ -26,6 +27,7 @@ function transformPuzzle(row: PuzzleRow): Puzzle {
     popularity: row.popularity,
     themes: row.theme_names || [],
     "opening tags": row.opening_names || [],
+    cost: puzzleCostUsd,
   };
 }
 
@@ -46,7 +48,7 @@ function parseRange(value: string): { min: number; max: number } | null {
   return start <= end ? { min: start, max: end } : { min: end, max: start };
 }
 
-async function fetchPuzzlesByIds(ids: string[]): Promise<Puzzle[]> {
+async function fetchPuzzlesByIds(ids: string[], puzzleCostUsd: number): Promise<Puzzle[]> {
   if (ids.length === 0) return [];
 
   const detailsQuery = `
@@ -77,7 +79,7 @@ async function fetchPuzzlesByIds(ids: string[]): Promise<Puzzle[]> {
   return ids
     .map((id) => rowMap.get(id))
     .filter((row): row is PuzzleRow => Boolean(row))
-    .map((row) => transformPuzzle(row));
+    .map((row) => transformPuzzle(row, puzzleCostUsd));
 }
 
 async function samplePuzzleIds(query: string, params: unknown[], count: number): Promise<string[]> {
@@ -109,10 +111,11 @@ async function samplePuzzleIds(query: string, params: unknown[], count: number):
 router.get("/", async (req: Request, res: Response) => {
   try {
     const { id, count, rating, themes, themesType, playerMoves } = req.query;
+    const puzzleCostUsd = getPuzzleUnitPriceUsd();
 
     // If id is provided, return that specific puzzle
     if (id) {
-      const puzzleList = await fetchPuzzlesByIds([String(id)]);
+      const puzzleList = await fetchPuzzlesByIds([String(id)], puzzleCostUsd);
 
       if (puzzleList.length === 0) {
         return res.status(400).json({ error: "Puzzle not found with the provided id" });
@@ -229,7 +232,7 @@ router.get("/", async (req: Request, res: Response) => {
       return res.json({ puzzles: [] });
     }
 
-    const puzzles = await fetchPuzzlesByIds(sampledIds);
+    const puzzles = await fetchPuzzlesByIds(sampledIds, puzzleCostUsd);
 
     const response: PuzzleResponse = {
       puzzles,

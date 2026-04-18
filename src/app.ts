@@ -1,9 +1,10 @@
-import express from "express";
+import express, { Request } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
 import puzzlesRouter from "./routes/puzzles";
 import logger from "./logger";
 import { authMiddleware } from "./middleware/auth";
+import { x402OrApiKeyMiddleware } from "./middleware/x402";
 
 const app = express();
 
@@ -12,7 +13,34 @@ app.use(pinoHttp({ logger, autoLogging: process.env.NODE_ENV !== "test" }));
 app.use(cors());
 app.use(express.json());
 
-const landingPageHtml = `<!doctype html>
+function getSingleHeaderValue(value: string | string[] | undefined): string | undefined {
+	if (Array.isArray(value)) {
+		return value[0];
+	}
+
+	return value;
+}
+
+function sanitizeBaseUrl(value: string): string {
+	return value.trim().replace(/\/+$/, "");
+}
+
+function resolvePublicApiBaseUrl(req: Request): string {
+	const configuredBaseUrl = process.env.PUBLIC_API_BASE_URL;
+	if (configuredBaseUrl && configuredBaseUrl.trim()) {
+		return sanitizeBaseUrl(configuredBaseUrl);
+	}
+
+	const forwardedProto = getSingleHeaderValue(req.headers["x-forwarded-proto"] as string | string[] | undefined);
+	const forwardedHost = getSingleHeaderValue(req.headers["x-forwarded-host"] as string | string[] | undefined);
+	const protocol = forwardedProto ? forwardedProto.split(",")[0].trim() : (req.protocol || "http");
+	const host = forwardedHost ? forwardedHost.split(",")[0].trim() : (req.get("host") || "localhost:3000");
+
+	return sanitizeBaseUrl(`${protocol}://${host}`);
+}
+
+function getLandingPageHtml(baseUrl: string): string {
+	return `<!doctype html>
 <html lang="en">
 <head>
 	<meta charset="UTF-8" />
@@ -175,17 +203,28 @@ const landingPageHtml = `<!doctype html>
 		<section class="hero">
 			<span class="tag">Chess Data API</span>
 			<h1>Chess Puzzles</h1>
-			<p>Authenticated API for querying puzzles by ID, random count, rating range, themes, and player-move depth.</p>
+			<p>Query puzzles by ID, random count, rating range, themes, and player-move depth. Access with API keys or pay-per-use over x402 on Celo stablecoins.</p>
 		</section>
 
 		<section class="grid">
 			<article class="card api">
-				<h2>Base Endpoint</h2>
-				<p><code>GET /puzzles</code></p>
+				<h2>Base Endpoints</h2>
+				<p><code>GET /puzzles</code> (API key required)</p>
+				<p><code>GET /puzzles/x402</code> (API key or x402 payment)</p>
 				<div>
 					<span class="pill">x-api-key: your-key</span>
 					<span class="pill">Authorization: Bearer your-key</span>
+					<span class="pill">x-payment: signed-payment</span>
+					<span class="pill">payment-signature: signed-payment</span>
 				</div>
+				<h2 style="margin-top:16px;">Access Modes</h2>
+				<ul>
+					<li><strong>API key mode</strong>: use <code>GET /puzzles</code> for existing key-based flows.</li>
+					<li><strong>x402 mode</strong>: use <code>GET /puzzles/x402</code> and pay a dynamic total based on <code>count × X402_PRICE_USD_PER_PUZZLE</code>.</li>
+					<li>Supported stablecoins: <code>USDC</code>, <code>USDT</code>, <code>USDm</code>.</li>
+					<li>Each puzzle object includes a <code>cost</code> field (USD per puzzle unit).</li>
+					<li>Clients can send API key on <code>/puzzles/x402</code> to skip payment.</li>
+				</ul>
 				<h2 style="margin-top:16px;">Query Parameters</h2>
 				<ul>
 					<li><code>id</code>: fetch one puzzle by ID (overrides filters)</li>
@@ -200,24 +239,30 @@ const landingPageHtml = `<!doctype html>
 			<article class="card examples">
 				<h2>Example Requests</h2>
 				<pre>curl -H "x-api-key: your-key" \
-	"http://localhost:3000/puzzles?count=5"</pre>
+	"${baseUrl}/puzzles?count=5"</pre>
+				<pre>curl "${baseUrl}/puzzles/x402?count=5"</pre>
+				<pre>curl -H "x-payment: &lt;signed-payment&gt;" \
+	"${baseUrl}/puzzles/x402?count=5"</pre>
 				<pre>curl -H "x-api-key: your-key" \
-	"http://localhost:3000/puzzles?id=00sHx"</pre>
+	"${baseUrl}/puzzles?id=00sHx"</pre>
 				<pre>curl -H "x-api-key: your-key" \
-	"http://localhost:3000/puzzles?count=10&rating=1400-1800&themes=[\"fork\",\"middlegame\"]&themesType=ANY"</pre>
+	"${baseUrl}/puzzles?count=10&rating=1400-1800&themes=[\"fork\",\"middlegame\"]&themesType=ANY"</pre>
 			</article>
 		</section>
 
-		<p class="footer">Tip: use /puzzles with count or id. All API calls require a key.</p>
+		<p class="footer">Tip: /puzzles keeps strict API-key auth. /puzzles/x402 calculates payment dynamically from requested puzzle count.</p>
 	</main>
 </body>
 </html>`;
+}
 
-app.get("/", (_req, res) => {
-	res.type("html").send(landingPageHtml).end();
+app.get("/", (req, res) => {
+	const baseUrl = resolvePublicApiBaseUrl(req);
+	res.type("html").send(getLandingPageHtml(baseUrl)).end();
 });
 
 // Routes
+app.use("/puzzles/x402", x402OrApiKeyMiddleware, puzzlesRouter);
 app.use("/puzzles", authMiddleware, puzzlesRouter);
 
 export default app;

@@ -13,18 +13,38 @@ interface ApiKeyRow {
   is_active: boolean;
 }
 
+export function extractApiKeyFromRequest(req: Request): string | undefined {
+  let apiKey = req.headers["x-api-key"] as string | undefined;
+
+  if (!apiKey) {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      apiKey = authHeader.slice(7);
+    }
+  }
+
+  return apiKey;
+}
+
+export async function getActiveApiKey(apiKey: string): Promise<ApiKeyRow | null> {
+  const result = await pool.query<ApiKeyRow>(
+    "SELECT id, api_key, description, is_active FROM api_keys WHERE api_key = $1 AND is_active = TRUE",
+    [apiKey]
+  );
+
+  return result.rows[0] || null;
+}
+
+export async function markApiKeyAsUsed(apiKey: string): Promise<void> {
+  await pool.query(
+    "UPDATE api_keys SET last_used_at = CURRENT_TIMESTAMP WHERE api_key = $1",
+    [apiKey]
+  );
+}
+
 export const authMiddleware = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    // Check for API key in headers
-    let apiKey = req.headers["x-api-key"] as string;
-
-    // Also check Authorization header (Bearer token format)
-    if (!apiKey) {
-      const authHeader = req.headers.authorization;
-      if (authHeader && authHeader.startsWith("Bearer ")) {
-        apiKey = authHeader.slice(7); // Remove "Bearer " prefix
-      }
-    }
+    const apiKey = extractApiKeyFromRequest(req);
 
     if (!apiKey) {
       logger.warn("Request without API key");
@@ -32,23 +52,15 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
       return;
     }
 
-    // Validate API key against database
-    const result = await pool.query<ApiKeyRow>(
-      "SELECT id, api_key, description, is_active FROM api_keys WHERE api_key = $1 AND is_active = TRUE",
-      [apiKey]
-    );
+    const activeKey = await getActiveApiKey(apiKey);
 
-    if (result.rows.length === 0) {
+    if (!activeKey) {
       logger.warn({ apiKey: apiKey.substring(0, 5) + "***" }, "Invalid or inactive API key");
       res.status(403).json({ error: "Forbidden. Invalid API key" });
       return;
     }
 
-    // Update last_used_at timestamp
-    await pool.query(
-      "UPDATE api_keys SET last_used_at = CURRENT_TIMESTAMP WHERE api_key = $1",
-      [apiKey]
-    );
+    await markApiKeyAsUsed(apiKey);
 
     // Store the API key in the request for logging/tracking
     req.apiKey = apiKey;
