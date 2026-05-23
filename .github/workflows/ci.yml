@@ -114,10 +114,11 @@ jobs:
           username: ${{ secrets.SSH_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            export PATH=$PATH:/root/.bun/bin:/root/.nvm/versions/node/v22.19.0/bin
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
 
             # go to app directory and pull latest changes
-            cd /var/www/app/chess-puzzles-api
+            cd /var/www/chess-puzzles-api
 
             # pull latest changes
             git pull
