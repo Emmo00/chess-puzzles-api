@@ -7,7 +7,7 @@ Built with Bun, TypeScript, Express, and PostgreSQL.
 ## What It Supports
 
 - API-key protected access to puzzle endpoints
-- Pay-per-use access with x402 on Celo stablecoins
+- Pay-per-use access with x402 on Celo and Base
 - Fetch a single puzzle by id
 - Fetch random puzzle sets by count (clamped to 1-100)
 - Filter by rating (exact or range)
@@ -58,17 +58,22 @@ Notes:
 - The app also accepts legacy `DB_*` names (`DB_HOST`, `DB_PORT`, etc.).
 - If `PGPORT` is unset and `DB_PORT=3306`, the code falls back to `5432`.
 
-For x402 pay-per-use on Celo, also set:
+For x402 pay-per-use on Celo + Base, also set:
 
 ```env
 X402_ENABLED=true
-X402_NETWORK=celo
+X402_NETWORKS=celo,base
 X402_PRICE_USD_PER_PUZZLE=0.01
 # Optional legacy fallback if per-puzzle variable is unset
 X402_PRICE_USD=0.01
-X402_PAY_TO_ADDRESS=0xYourPayoutWallet
-X402_ACCEPTED_TOKENS=USDC,USDT,USDm
-THIRDWEB_SECRET_KEY=your_thirdweb_secret_key
+X402_CHALLENGE_TTL_SECONDS=600
+X402_ACCEPTED_TOKENS=USDC
+X402_CELO_PAY_TO_ADDRESS=0xYourCeloPayoutWallet
+X402_BASE_PAY_TO_ADDRESS=0xYourBasePayoutWallet
+X402_CELO_RPC_URL=https://forno.celo.org
+X402_BASE_RPC_URL=https://mainnet.base.org
+X402_CELO_USDC_TOKEN_ADDRESS=0x...
+X402_BASE_USDC_TOKEN_ADDRESS=0x...
 ```
 
 ### 3. Initialize database schema
@@ -123,9 +128,10 @@ Docs and landing page examples use `PUBLIC_API_BASE_URL`.
 
 Pay-per-use settings:
 
-- Network: Celo mainnet
+- Networks: Celo and Base mainnets
 - Price model: dynamic per request using `count × X402_PRICE_USD_PER_PUZZLE` (or `1` when `id` is used)
-- Supported stablecoins: `USDC`, `USDT`, `USDm`
+- Supported chains: `Celo`, `Base`
+- Supported tokens: set by `X402_ACCEPTED_TOKENS` + per-chain token address env vars
 
 ## API Endpoints
 
@@ -187,10 +193,10 @@ Pay-per-use flow (first call returns `402` challenge):
 curl "$PUBLIC_API_BASE_URL/puzzles/x402?count=10"
 ```
 
-Pay-per-use flow with signed payment data:
+Pay-per-use flow with signed payment proof data:
 
 ```bash
-curl -H "X-PAYMENT: <signed-payment-data>" \
+curl -H "X-PAYMENT: <base64url-or-json-proof>" \
   "$PUBLIC_API_BASE_URL/puzzles/x402?count=10"
 ```
 

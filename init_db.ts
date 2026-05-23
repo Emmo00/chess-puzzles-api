@@ -88,6 +88,35 @@ CREATE TABLE IF NOT EXISTS api_keys (
 
 CREATE INDEX IF NOT EXISTS idx_api_keys_key_active ON api_keys (api_key, is_active);
 
+CREATE TABLE IF NOT EXISTS x402_challenges (
+  challenge_id UUID PRIMARY KEY,
+  nonce TEXT NOT NULL UNIQUE,
+  method TEXT NOT NULL,
+  resource TEXT NOT NULL,
+  chain_id INTEGER NOT NULL,
+  token_symbol TEXT NOT NULL,
+  token_address TEXT NOT NULL,
+  token_decimals SMALLINT NOT NULL,
+  pay_to TEXT NOT NULL,
+  amount_atomic NUMERIC(78, 0) NOT NULL,
+  amount_usd NUMERIC(20, 6) NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  used_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS x402_payment_claims (
+  id BIGSERIAL PRIMARY KEY,
+  challenge_id UUID NOT NULL UNIQUE REFERENCES x402_challenges(challenge_id) ON DELETE CASCADE,
+  chain_id INTEGER NOT NULL,
+  tx_hash TEXT NOT NULL,
+  payer TEXT NOT NULL,
+  token_address TEXT NOT NULL,
+  amount_atomic NUMERIC(78, 0) NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (chain_id, tx_hash)
+);
+
 CREATE INDEX IF NOT EXISTS idx_puzzles_rating ON puzzles (rating);
 CREATE INDEX IF NOT EXISTS idx_puzzles_player_moves ON puzzles (player_moves);
 CREATE INDEX IF NOT EXISTS idx_puzzles_random_key ON puzzles (random_key);

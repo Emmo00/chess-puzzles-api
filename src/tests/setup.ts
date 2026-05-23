@@ -307,6 +307,8 @@ function generateOpeningEntries() {
 }
 
 async function createTables() {
+  await pool.query("DROP TABLE IF EXISTS x402_payment_claims");
+  await pool.query("DROP TABLE IF EXISTS x402_challenges");
   await pool.query("DROP TABLE IF EXISTS puzzle_openings");
   await pool.query("DROP TABLE IF EXISTS puzzle_themes");
   await pool.query("DROP TABLE IF EXISTS openings");
@@ -374,6 +376,39 @@ async function createTables() {
       created_by TEXT
     )
   `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS x402_challenges (
+      challenge_id UUID PRIMARY KEY,
+      nonce TEXT NOT NULL UNIQUE,
+      method TEXT NOT NULL,
+      resource TEXT NOT NULL,
+      chain_id INTEGER NOT NULL,
+      token_symbol TEXT NOT NULL,
+      token_address TEXT NOT NULL,
+      token_decimals SMALLINT NOT NULL,
+      pay_to TEXT NOT NULL,
+      amount_atomic NUMERIC(78, 0) NOT NULL,
+      amount_usd NUMERIC(20, 6) NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      used_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS x402_payment_claims (
+      id BIGSERIAL PRIMARY KEY,
+      challenge_id UUID NOT NULL UNIQUE REFERENCES x402_challenges(challenge_id) ON DELETE CASCADE,
+      chain_id INTEGER NOT NULL,
+      tx_hash TEXT NOT NULL,
+      payer TEXT NOT NULL,
+      token_address TEXT NOT NULL,
+      amount_atomic NUMERIC(78, 0) NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (chain_id, tx_hash)
+    )
+  `);
 }
 
 function isSchemaPermissionError(error: unknown): boolean {
@@ -410,6 +445,8 @@ async function resetExistingData() {
   await pool.query("DELETE FROM themes");
   await pool.query("DELETE FROM puzzles");
   await pool.query("DELETE FROM api_keys");
+  await pool.query("DELETE FROM x402_payment_claims");
+  await pool.query("DELETE FROM x402_challenges");
 }
 
 async function seedData() {
@@ -492,6 +529,8 @@ async function seedData() {
 }
 
 async function cleanupTables() {
+  await pool.query("DROP TABLE IF EXISTS x402_payment_claims");
+  await pool.query("DROP TABLE IF EXISTS x402_challenges");
   await pool.query("DROP TABLE IF EXISTS puzzle_openings");
   await pool.query("DROP TABLE IF EXISTS puzzle_themes");
   await pool.query("DROP TABLE IF EXISTS openings");

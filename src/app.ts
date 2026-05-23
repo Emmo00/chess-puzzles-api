@@ -203,7 +203,7 @@ function getLandingPageHtml(baseUrl: string): string {
 		<section class="hero">
 			<span class="tag">Chess Data API</span>
 			<h1>Chess Puzzles</h1>
-			<p>Query puzzles by ID, random count, rating range, themes, and player-move depth. Access with API keys or pay-per-use over x402 on Celo stablecoins.</p>
+			<p>Query puzzles by ID, random count, rating range, themes, and player-move depth. Access with API keys or pay-per-use over x402 on Celo and Base.</p>
 		</section>
 
 		<section class="grid">
@@ -221,7 +221,8 @@ function getLandingPageHtml(baseUrl: string): string {
 				<ul>
 					<li><strong>API key mode</strong>: use <code>GET /puzzles</code> for existing key-based flows.</li>
 					<li><strong>x402 mode</strong>: use <code>GET /puzzles/x402</code> and pay a dynamic total based on <code>count × X402_PRICE_USD_PER_PUZZLE</code>.</li>
-					<li>Supported stablecoins: <code>USDC</code>, <code>USDT</code>, <code>USDm</code>.</li>
+					<li>Supported chains: <code>Celo</code> and <code>Base</code>.</li>
+					<li>Supported tokens are configured by server env (<code>X402_ACCEPTED_TOKENS</code>).</li>
 					<li>Each puzzle object includes a <code>cost</code> field (USD per puzzle unit).</li>
 					<li>Clients can send API key on <code>/puzzles/x402</code> to skip payment.</li>
 				</ul>
