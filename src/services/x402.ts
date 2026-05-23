@@ -94,6 +94,7 @@ const DEFAULT_PRICE_PER_PUZZLE_USD = 0.01;
 const MAX_PUZZLE_COUNT = 100;
 const DEFAULT_CHALLENGE_TTL_SECONDS = 600;
 const DEFAULT_NETWORKS = "celo,base";
+const MAX_BLOCK_TIMESTAMP_SKEW_MS = 120000;
 const ERC20_TRANSFER_ABI = [
   {
     type: "function",
@@ -559,7 +560,8 @@ async function verifyTransferOnChain(
   }
 
   const blockTimestamp = new Date(Number(paymentBlock.timestamp) * 1000);
-  if (blockTimestamp.getTime() < new Date(challenge.created_at).getTime()) {
+  const challengeCreatedAtMs = new Date(challenge.created_at).getTime();
+  if (blockTimestamp.getTime() + MAX_BLOCK_TIMESTAMP_SKEW_MS < challengeCreatedAtMs) {
     return { ok: false, error: "Payment transaction is older than the issued challenge" };
   }
 

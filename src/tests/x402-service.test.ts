@@ -1,5 +1,6 @@
 import { Request } from "express";
 import { Hex, encodeFunctionData } from "viem";
+import "./setup";
 import {
   getPuzzleUnitPriceUsd,
   getRequestedPuzzleUnits,
