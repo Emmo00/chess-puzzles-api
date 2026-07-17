@@ -1,0 +1,65 @@
+import { Request } from "express";
+
+function getSingleHeaderValue(value: string | string[] | undefined): string | undefined {
+  if (Array.isArray(value)) {
+    return value[0];
+  }
+
+  return value;
+}
+
+function sanitizeBaseUrl(value: string): string {
+  return value.trim().replace(/\/+$/, "");
+}
+
+export function resolvePublicApiBaseUrl(req: Request): string {
+  const configuredBaseUrl = process.env.PUBLIC_API_BASE_URL;
+  if (configuredBaseUrl && configuredBaseUrl.trim()) {
+    return sanitizeBaseUrl(configuredBaseUrl);
+  }
+
+  const forwardedProto = getSingleHeaderValue(req.headers["x-forwarded-proto"] as string | string[] | undefined);
+  const forwardedHost = getSingleHeaderValue(req.headers["x-forwarded-host"] as string | string[] | undefined);
+  const protocol = forwardedProto ? forwardedProto.split(",")[0].trim() : req.protocol || "http";
+  const host = forwardedHost ? forwardedHost.split(",")[0].trim() : req.get("host") || "localhost:3000";
+
+  return sanitizeBaseUrl(`${protocol}://${host}`);
+}
+
+function normalizePositiveMoney(value: string | undefined): number | null {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = Number.parseFloat(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null;
+  }
+
+  return parsed;
+}
+
+export function getPuzzleUnitPriceUsd(): number {
+  return (
+    normalizePositiveMoney(process.env.X402_PRICE_USD_PER_PUZZLE) ??
+    normalizePositiveMoney(process.env.X402_PRICE_USD) ??
+    0.1
+  );
+}
+
+export function parseRange(value: string): { min: number; max: number } | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  if (/^\d+$/.test(trimmed)) {
+    const exact = parseInt(trimmed, 10);
+    return { min: exact, max: exact };
+  }
+
+  const match = trimmed.match(/^(\d+)\s*-\s*(\d+)$/);
+  if (!match) return null;
+
+  const start = parseInt(match[1], 10);
+  const end = parseInt(match[2], 10);
+  return start <= end ? { min: start, max: end } : { min: end, max: start };
+}

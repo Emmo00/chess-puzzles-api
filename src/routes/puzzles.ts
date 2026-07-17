@@ -2,7 +2,7 @@ import { Router, Request, Response } from "express";
 import pool from "../db";
 import { Puzzle, PuzzleRow, PuzzleResponse } from "../types";
 import logger from "../logger";
-import { getPuzzleUnitPriceUsd } from "../services/x402";
+import { getPuzzleUnitPriceUsd, parseRange } from "../utils";
 
 const router = Router();
 
@@ -29,23 +29,6 @@ function transformPuzzle(row: PuzzleRow, puzzleCostUsd: number): Puzzle {
     "opening tags": row.opening_names || [],
     cost: puzzleCostUsd,
   };
-}
-
-function parseRange(value: string): { min: number; max: number } | null {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-
-  if (/^\d+$/.test(trimmed)) {
-    const exact = parseInt(trimmed, 10);
-    return { min: exact, max: exact };
-  }
-
-  const match = trimmed.match(/^(\d+)\s*-\s*(\d+)$/);
-  if (!match) return null;
-
-  const start = parseInt(match[1], 10);
-  const end = parseInt(match[2], 10);
-  return start <= end ? { min: start, max: end } : { min: end, max: start };
 }
 
 async function fetchPuzzlesByIds(ids: string[], puzzleCostUsd: number): Promise<Puzzle[]> {

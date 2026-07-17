@@ -1,6 +1,5 @@
-import { Request, Response, NextFunction } from "express";
+import { Request } from "express";
 import pool from "../db";
-import logger from "../logger";
 
 export interface AuthRequest extends Request {
   apiKey?: string;
@@ -41,35 +40,3 @@ export async function markApiKeyAsUsed(apiKey: string): Promise<void> {
     [apiKey]
   );
 }
-
-export const authMiddleware = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
-  try {
-    const apiKey = extractApiKeyFromRequest(req);
-
-    if (!apiKey) {
-      logger.warn("Request without API key");
-      res.status(401).json({ error: "Unauthorized. API key required in 'x-api-key' header or 'Authorization: Bearer <key>' header" });
-      return;
-    }
-
-    const activeKey = await getActiveApiKey(apiKey);
-
-    if (!activeKey) {
-      logger.warn({ apiKey: apiKey.substring(0, 5) + "***" }, "Invalid or inactive API key");
-      res.status(403).json({ error: "Forbidden. Invalid API key" });
-      return;
-    }
-
-    await markApiKeyAsUsed(apiKey);
-
-    // Store the API key in the request for logging/tracking
-    req.apiKey = apiKey;
-    next();
-  } catch (error) {
-    logger.error(error, "Error validating API key");
-    res.status(500).json({ error: "Internal server error" });
-  }
-};
-
-export default authMiddleware;
-

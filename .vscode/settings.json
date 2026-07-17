@@ -1,5 +1,8 @@
 {
     "chat.tools.terminal.autoApprove": {
         "bun": true
-    }
+    },
+    "cSpell.words": [
+        "puzzleid"
+    ]
 }
