@@ -28,9 +28,9 @@ export interface PuzzleRow {
   opening_names: string[] | null;
 }
 
-export interface AuthConfig {
-  apiKey: string;
-  description?: string;
-  createdAt?: Date;
-  isActive?: boolean;
+export interface ApiKeyRow {
+  id: number;
+  api_key: string;
+  description: string;
+  is_active: boolean;
 }

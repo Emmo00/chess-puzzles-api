@@ -3,11 +3,11 @@ import cors from "cors";
 import pinoHttp from "pino-http";
 import puzzlesRouter from "./routes/puzzles";
 import logger from "./logger";
-import { x402OrApiKeyMiddleware } from "./middleware/x402";
+import { x402OrApiKeyMiddleware } from "./middleware/x402AndAuth";
 import getLandingPageHtml from "./pages/landingPage";
 import { resolvePublicApiBaseUrl } from "./utils";
 
-const app = express();
+const app: express.Application = express();
 
 // Middleware
 app.use(pinoHttp({ logger, autoLogging: process.env.NODE_ENV !== "test" }));
