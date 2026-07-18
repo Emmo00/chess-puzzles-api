@@ -8,6 +8,16 @@ function getSingleHeaderValue(value: string | string[] | undefined): string | un
   return value;
 }
 
+export function getQueryParam(req: Request, paramName: string): string | undefined {
+  const value = req.query[paramName];
+
+  if (Array.isArray(value)) {
+    return typeof value[0] === "string" ? value[0] : undefined;
+  }
+
+  return typeof value === "string" ? value : undefined;
+}
+
 function sanitizeBaseUrl(value: string): string {
   return value.trim().replace(/\/+$/, "");
 }
@@ -40,11 +50,7 @@ function normalizePositiveMoney(value: string | undefined): number | null {
 }
 
 export function getPuzzleUnitPriceUsd(): number {
-  return (
-    normalizePositiveMoney(process.env.X402_PRICE_USD_PER_PUZZLE) ??
-    normalizePositiveMoney(process.env.X402_PRICE_USD) ??
-    0.1
-  );
+  return normalizePositiveMoney(process.env.X402_PRICE_USD_PER_PUZZLE) ?? 0.1;
 }
 
 export function parseRange(value: string): { min: number; max: number } | null {
@@ -62,4 +68,17 @@ export function parseRange(value: string): { min: number; max: number } | null {
   const start = parseInt(match[1], 10);
   const end = parseInt(match[2], 10);
   return start <= end ? { min: start, max: end } : { min: end, max: start };
+}
+
+export function extractApiKeyFromRequest(req: Request): string | undefined {
+  let apiKey = req.headers["x-api-key"] as string | undefined;
+
+  if (!apiKey) {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      apiKey = authHeader.slice(7);
+    }
+  }
+
+  return apiKey;
 }
