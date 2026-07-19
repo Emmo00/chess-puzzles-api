@@ -91,7 +91,7 @@ export const x402OrApiKeyMiddleware = async (req: Request, res: Response, next: 
     const requestedPuzzleUnits = getRequestedPuzzleUnits(req) ?? 1;
     const PRICE = formatUsdAmount(getPuzzleUnitPriceUsd() * requestedPuzzleUnits);
 
-    paymentMiddleware(
+    return paymentMiddleware(
       {
         "GET /puzzles": {
           accepts: [
