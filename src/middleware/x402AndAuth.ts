@@ -93,7 +93,7 @@ export const x402OrApiKeyMiddleware = async (req: Request, res: Response, next: 
 
     return paymentMiddleware(
       {
-        "GET /puzzles": {
+        "GET /": {
           accepts: [
             {
               scheme: "exact",
