@@ -1,5 +1,5 @@
 import { Request } from "express";
-import { getPuzzleUnitPriceUsd, getRequestedPuzzleUnits } from "../services/x402";
+import { getPuzzleUnitPriceUsd, getRequestedPuzzleUnits } from "../utils";
 
 function mockRequest(query: Record<string, unknown>): Request {
   return { query } as Request;
@@ -35,10 +35,9 @@ describe("x402 pricing helpers", () => {
     expect(getPuzzleUnitPriceUsd()).toBe(0.25);
   });
 
-  it("falls back to legacy price when per-puzzle setting is absent", () => {
+  it("falls back to the default price when per-puzzle setting is absent", () => {
     delete process.env.X402_PRICE_USD_PER_PUZZLE;
-    process.env.X402_PRICE_USD = "0.07";
 
-    expect(getPuzzleUnitPriceUsd()).toBe(0.07);
+    expect(getPuzzleUnitPriceUsd()).toBe(0.1);
   });
 });

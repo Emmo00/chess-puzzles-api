@@ -53,6 +53,25 @@ export function getPuzzleUnitPriceUsd(): number {
   return normalizePositiveMoney(process.env.X402_PRICE_USD_PER_PUZZLE) ?? 0.1;
 }
 
+export function getRequestedPuzzleUnits(req: Request): number | null {
+  const id = getQueryParam(req, "id");
+  if (id) {
+    return 1;
+  }
+
+  const count = getQueryParam(req, "count");
+  if (count === undefined) {
+    return null;
+  }
+
+  const parsedCount = Number.parseInt(count, 10);
+  if (Number.isNaN(parsedCount)) {
+    return 1;
+  }
+
+  return Math.min(100, Math.max(1, parsedCount));
+}
+
 export function parseRange(value: string): { min: number; max: number } | null {
   const trimmed = value.trim();
   if (!trimmed) return null;

@@ -1,15 +1,29 @@
-import { Request } from "express";
-import {
-  getPuzzleUnitPriceUsd,
-  getRequestedPuzzleUnits,
-  resetX402RuntimeCache,
-  settleX402Request,
-} from "../services/x402";
-import logger from "../logger";
+import { NextFunction, Request, Response } from "express";
+import { getActiveApiKey, markApiKeyAsUsed, x402OrApiKeyMiddleware } from "../middleware/x402AndAuth";
 
-const mockSettlePayment = jest.fn();
-const mockFacilitator = jest.fn();
-const mockCreateThirdwebClient = jest.fn();
+const mockQuery = jest.fn();
+const mockPaymentMiddleware = jest.fn();
+const mockRegister = jest.fn().mockReturnThis();
+const mockResourceServer = jest.fn().mockReturnValue({ register: mockRegister });
+const mockExactEvmScheme = jest.fn().mockReturnValue({});
+const mockHttpFacilitatorClient = jest.fn().mockReturnValue({});
+const mockCreateCdpFacilitatorClient = jest.fn().mockReturnValue({});
+
+function MockResourceServer(...args: unknown[]) {
+  return mockResourceServer(...args);
+}
+
+function MockExactEvmScheme(...args: unknown[]) {
+  return mockExactEvmScheme(...args);
+}
+
+function MockHttpFacilitatorClient(...args: unknown[]) {
+  return mockHttpFacilitatorClient(...args);
+}
+
+function MockCreateCdpFacilitatorClient(...args: unknown[]) {
+  return mockCreateCdpFacilitatorClient(...args);
+}
 
 jest.mock("../logger", () => ({
   __esModule: true,
@@ -18,21 +32,28 @@ jest.mock("../logger", () => ({
   },
 }));
 
-jest.mock("thirdweb/x402", () => ({
-  settlePayment: (...args: unknown[]) => mockSettlePayment(...args),
-  facilitator: (...args: unknown[]) => mockFacilitator(...args),
+jest.mock("../db", () => ({
+  __esModule: true,
+  default: {
+    query: (...args: unknown[]) => mockQuery(...args),
+  },
 }));
 
-jest.mock("thirdweb", () => ({
-  createThirdwebClient: (...args: unknown[]) => mockCreateThirdwebClient(...args),
+jest.mock("@x402/express", () => ({
+  paymentMiddleware: (...args: unknown[]) => mockPaymentMiddleware(...args),
+  x402ResourceServer: MockResourceServer,
 }));
 
-const mockCelo = { chain: "celo" };
-const mockCeloSepolia = { chain: "celo-sepolia" };
+jest.mock("@x402/evm/exact/server", () => ({
+  ExactEvmScheme: MockExactEvmScheme,
+}));
 
-jest.mock("thirdweb/chains", () => ({
-  celo: mockCelo,
-  celoSepolia: mockCeloSepolia,
+jest.mock("@x402/core/server", () => ({
+  HTTPFacilitatorClient: MockHttpFacilitatorClient,
+}));
+
+jest.mock("@coinbase/cdp-sdk/x402", () => ({
+  createCdpFacilitatorClient: MockCreateCdpFacilitatorClient,
 }));
 
 function createRequest(options?: {
@@ -42,11 +63,11 @@ function createRequest(options?: {
   originalUrl?: string;
   protocol?: string;
   host?: string;
-}): Request {
+}): Request & { apiKey?: string } {
   const query = options?.query || {};
   const headers = options?.headers || {};
   const method = options?.method || "GET";
-  const originalUrl = options?.originalUrl || "/puzzles/x402?count=1";
+  const originalUrl = options?.originalUrl || "/puzzles?count=1";
   const protocol = options?.protocol || "http";
   const host = options?.host || "localhost:3000";
 
@@ -62,216 +83,145 @@ function createRequest(options?: {
       }
       return undefined;
     }),
-  } as unknown as Request;
+  } as unknown as Request & { apiKey?: string };
 }
 
-describe("x402 service", () => {
+function createResponse(): Response {
+  return {
+    status: jest.fn().mockReturnThis(),
+    json: jest.fn().mockReturnThis(),
+  } as unknown as Response;
+}
+
+describe("x402 middleware", () => {
   const originalEnv = { ...process.env };
 
   beforeEach(() => {
-    process.env = { ...originalEnv };
-    resetX402RuntimeCache();
+    process.env = {
+      ...originalEnv,
+      X402_PAY_TO_ADDRESS: "0xPayToWallet",
+      X402_CELO_FACILITATOR_URL: "https://api.x402.celo.org",
+      CELO_FACILITATOR_API_KEY: "celo-key",
+    };
+
     jest.clearAllMocks();
+    mockQuery.mockReset();
+    mockPaymentMiddleware.mockReset();
+    mockRegister.mockReturnThis();
   });
 
   afterAll(() => {
     process.env = { ...originalEnv };
   });
 
-  it("returns default price when configured values are invalid", () => {
-    process.env.X402_PRICE_USD_PER_PUZZLE = "-1";
-    process.env.X402_PRICE_USD = "0";
-
-    expect(getPuzzleUnitPriceUsd()).toBe(0.01);
-  });
-
-  it("returns null puzzle units when both id and count are absent", () => {
-    expect(getRequestedPuzzleUnits(createRequest({ query: {} }))).toBeNull();
-  });
-
-  it("returns 400 when query has neither id nor count", async () => {
-    process.env.X402_ENABLED = "false";
-
-    const result = await settleX402Request(createRequest({ query: {} }));
-
-    expect(result.status).toBe(400);
-    expect(result.responseBody).toEqual({
-      error: "You must provide either 'id' or 'count' parameter",
+  it("returns the active api key record", async () => {
+    mockQuery.mockResolvedValueOnce({
+      rows: [{ id: 1, api_key: "valid-key", description: "Test Key", is_active: true }],
     });
-  });
 
-  it("returns 503 when x402 is disabled", async () => {
-    process.env.X402_ENABLED = "false";
-
-    const result = await settleX402Request(createRequest({ query: { count: "1" } }));
-
-    expect(result.status).toBe(503);
-    expect(result.responseBody).toEqual({
-      error: "x402 payment endpoint is not configured on this server",
+    await expect(getActiveApiKey("valid-key")).resolves.toEqual({
+      id: 1,
+      api_key: "valid-key",
+      description: "Test Key",
+      is_active: true,
     });
+
+    expect(mockQuery).toHaveBeenCalledWith(
+      "SELECT id, api_key, description, is_active FROM api_keys WHERE api_key = $1 AND is_active = TRUE",
+      ["valid-key"]
+    );
   });
 
-  it("returns 503 and logs when required x402 credentials are missing", async () => {
-    process.env.X402_ENABLED = "true";
-    delete process.env.THIRDWEB_SECRET_KEY;
-    delete process.env.X402_SERVER_WALLET_ADDRESS;
-    delete process.env.X402_PAY_TO_ADDRESS;
+  it("marks an api key as used", async () => {
+    mockQuery.mockResolvedValueOnce({ rowCount: 1 });
 
-    const result = await settleX402Request(createRequest({ query: { count: "1" } }));
+    await markApiKeyAsUsed("valid-key");
 
-    expect(result.status).toBe(503);
-    expect(logger.error).toHaveBeenCalledTimes(1);
+    expect(mockQuery).toHaveBeenCalledWith(
+      "UPDATE api_keys SET last_used_at = CURRENT_TIMESTAMP WHERE api_key = $1",
+      ["valid-key"]
+    );
   });
 
-  it("settles payment with dynamic total and forwarded host/protocol", async () => {
-    process.env.X402_ENABLED = "true";
-    process.env.THIRDWEB_SECRET_KEY = "secret";
-    process.env.X402_SERVER_WALLET_ADDRESS = "0xServerWallet";
-    process.env.X402_PAY_TO_ADDRESS = "0xPayToWallet";
+  it("allows valid api keys without payment", async () => {
+    mockQuery.mockResolvedValueOnce({
+      rows: [{ id: 1, api_key: "valid-key", description: "Test Key", is_active: true }],
+    });
+    mockQuery.mockResolvedValueOnce({ rowCount: 1 });
+
+    const req = createRequest({
+      headers: { "x-api-key": "valid-key" },
+      query: { count: "3" },
+    });
+    const res = createResponse();
+    const next = jest.fn();
+
+    await x402OrApiKeyMiddleware(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(req.apiKey).toBe("valid-key");
+    expect(mockPaymentMiddleware).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid api keys", async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+
+    const req = createRequest({
+      headers: { "x-api-key": "invalid-key" },
+      query: { count: "3" },
+    });
+    const res = createResponse();
+    const next = jest.fn();
+
+    await x402OrApiKeyMiddleware(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith({ error: "Forbidden. Invalid API key" });
+    expect(next).not.toHaveBeenCalled();
+    expect(mockPaymentMiddleware).not.toHaveBeenCalled();
+  });
+
+  it("builds x402 payment config for /puzzles", async () => {
     process.env.X402_PRICE_USD_PER_PUZZLE = "0.15";
-    process.env.X402_NETWORK = "celo-sepolia";
 
-    mockCreateThirdwebClient.mockReturnValue({ client: true });
-    mockFacilitator.mockReturnValue({ facilitator: true });
-    mockSettlePayment.mockResolvedValue({
-      status: 200,
-      responseHeaders: new Headers({ "x-payment": "ok" }),
-      responseBody: { paid: true },
+    mockPaymentMiddleware.mockImplementation(() => (_req: Request, _res: Response, next: NextFunction) => {
+      next();
     });
 
-    const result = await settleX402Request(
-      createRequest({
-        query: { count: "3" },
-        headers: {
-          "payment-signature": "signed-payment",
-          "x-forwarded-proto": "https,http",
-          "x-forwarded-host": "api.live.example,proxy.local",
-        },
-        originalUrl: "/puzzles/x402?count=3",
-      }),
-      "Custom description"
-    );
+    const req = createRequest({ query: { count: "3" } });
+    const res = createResponse();
+    const next = jest.fn();
 
-    expect(result.status).toBe(200);
-    expect(result.responseHeaders).toEqual({ "x-payment": "ok" });
+    await x402OrApiKeyMiddleware(req, res, next);
 
-    expect(mockCreateThirdwebClient).toHaveBeenCalledWith({ secretKey: "secret" });
-    expect(mockFacilitator).toHaveBeenCalledWith({
-      client: { client: true },
-      serverWalletAddress: "0xServerWallet",
-    });
+    expect(mockPaymentMiddleware).toHaveBeenCalledTimes(1);
+    expect(mockResourceServer).toHaveBeenCalledTimes(1);
+    expect(mockRegister).toHaveBeenCalledWith("eip155:8453", expect.anything());
+    expect(mockRegister).toHaveBeenCalledWith("eip155:42220", expect.anything());
+    expect(next).toHaveBeenCalledTimes(1);
 
-    expect(mockSettlePayment).toHaveBeenCalledWith(
+    const [routeConfig] = mockPaymentMiddleware.mock.calls[0];
+    expect(routeConfig).toEqual(
       expect.objectContaining({
-        resourceUrl: "https://api.live.example/puzzles/x402?count=3",
-        paymentData: "signed-payment",
-        payTo: "0xPayToWallet",
-        network: mockCeloSepolia,
-        price: "$0.45",
-        routeConfig: {
-          description: "Custom description (3 puzzles)",
+        "GET /puzzles": expect.objectContaining({
+          description: "Puzzle data",
           mimeType: "application/json",
-        },
+          accepts: [
+            {
+              scheme: "exact",
+              price: "$0.45",
+              network: "eip155:8453",
+              payTo: "0xPayToWallet",
+            },
+            {
+              scheme: "exact",
+              price: "$0.45",
+              network: "eip155:42220",
+              payTo: "0xPayToWallet",
+            },
+          ],
+        }),
       })
     );
-  });
-
-  it("uses x-payment header and singular description for id request", async () => {
-    process.env.X402_ENABLED = "true";
-    process.env.THIRDWEB_SECRET_KEY = "secret";
-    process.env.X402_SERVER_WALLET_ADDRESS = "0xServerWallet";
-    process.env.X402_PAY_TO_ADDRESS = "0xPayToWallet";
-    process.env.X402_PRICE_USD_PER_PUZZLE = "0.010000";
-    process.env.X402_NETWORK = "celo";
-
-    mockCreateThirdwebClient.mockReturnValue({ client: true });
-    mockFacilitator.mockReturnValue({ facilitator: true });
-    mockSettlePayment.mockResolvedValue({
-      status: 200,
-      responseHeaders: [["x-array-header", 2], ["x-plain", "ok"]],
-      responseBody: { paid: true },
-    });
-
-    const result = await settleX402Request(
-      createRequest({
-        query: { id: "TEST001" },
-        headers: {
-          "x-payment": "fallback-payment",
-        },
-        originalUrl: "/puzzles/x402?id=TEST001",
-        host: "service.internal",
-      })
-    );
-
-    expect(result.status).toBe(200);
-    expect(result.responseHeaders).toEqual({
-      "x-array-header": "2",
-      "x-plain": "ok",
-    });
-
-    expect(mockSettlePayment).toHaveBeenCalledWith(
-      expect.objectContaining({
-        paymentData: "fallback-payment",
-        network: mockCelo,
-        price: "$0.01",
-        resourceUrl: "http://service.internal/puzzles/x402?id=TEST001",
-        routeConfig: {
-          description: "Pay-per-use access to chess puzzles (1 puzzle)",
-          mimeType: "application/json",
-        },
-      })
-    );
-  });
-
-  it("normalizes object response headers and falls back status to 500", async () => {
-    process.env.X402_ENABLED = "true";
-    process.env.THIRDWEB_SECRET_KEY = "secret";
-    process.env.X402_SERVER_WALLET_ADDRESS = "0xServerWallet";
-    process.env.X402_PAY_TO_ADDRESS = "0xPayToWallet";
-
-    mockCreateThirdwebClient.mockReturnValue({ client: true });
-    mockFacilitator.mockReturnValue({ facilitator: true });
-    mockSettlePayment.mockResolvedValue({
-      responseHeaders: {
-        "x-many": ["a", "b"],
-        "x-number": 12,
-        "x-null": null,
-      },
-      responseBody: "raw-body",
-    });
-
-    const result = await settleX402Request(createRequest({ query: { count: "2" } }));
-
-    expect(result.status).toBe(500);
-    expect(result.responseHeaders).toEqual({
-      "x-many": "a, b",
-      "x-number": "12",
-    });
-    expect(result.responseBody).toBe("raw-body");
-  });
-
-  it("reuses runtime cache across calls until reset", async () => {
-    process.env.X402_ENABLED = "true";
-    process.env.THIRDWEB_SECRET_KEY = "secret";
-    process.env.X402_SERVER_WALLET_ADDRESS = "0xServerWallet";
-    process.env.X402_PAY_TO_ADDRESS = "0xPayToWallet";
-
-    mockCreateThirdwebClient.mockReturnValue({ client: true });
-    mockFacilitator.mockReturnValue({ facilitator: true });
-    mockSettlePayment.mockResolvedValue({
-      status: 200,
-      responseHeaders: {},
-      responseBody: { ok: true },
-    });
-
-    await settleX402Request(createRequest({ query: { count: "1" } }));
-    await settleX402Request(createRequest({ query: { count: "2" } }));
-
-    expect(mockCreateThirdwebClient).toHaveBeenCalledTimes(1);
-
-    resetX402RuntimeCache();
-    await settleX402Request(createRequest({ query: { count: "3" } }));
-
-    expect(mockCreateThirdwebClient).toHaveBeenCalledTimes(2);
   });
 });

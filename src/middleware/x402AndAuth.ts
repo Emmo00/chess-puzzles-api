@@ -5,7 +5,7 @@ import { HTTPFacilitatorClient } from "@x402/core/server";
 import { createCdpFacilitatorClient} from "@coinbase/cdp-sdk/x402";
 import logger from "../logger";
 import pool from "../db";
-import { extractApiKeyFromRequest, getPuzzleUnitPriceUsd, getQueryParam } from "../utils";
+import { extractApiKeyFromRequest, getPuzzleUnitPriceUsd, getRequestedPuzzleUnits } from "../utils";
 import type { ApiKeyRow } from "../types";
 
 const PAY_TO = process.env.X402_PAY_TO_ADDRESS || "";
@@ -50,6 +50,15 @@ export async function markApiKeyAsUsed(apiKey: string): Promise<void> {
   await pool.query("UPDATE api_keys SET last_used_at = CURRENT_TIMESTAMP WHERE api_key = $1", [apiKey]);
 }
 
+function formatUsdAmount(amount: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
+}
+
 export const x402OrApiKeyMiddleware = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const apiKey = extractApiKeyFromRequest(req);
@@ -68,8 +77,8 @@ export const x402OrApiKeyMiddleware = async (req: Request, res: Response, next: 
       return;
     }
 
-    const PRICE_FOR_REQUEST = getPuzzleUnitPriceUsd() * (getQueryParam(req, "count") ? parseInt(getQueryParam(req, "count")!, 10) : 1);
-    const PRICE = `$${PRICE_FOR_REQUEST}`;
+    const requestedPuzzleUnits = getRequestedPuzzleUnits(req) ?? 1;
+    const PRICE = formatUsdAmount(getPuzzleUnitPriceUsd() * requestedPuzzleUnits);
 
     paymentMiddleware(
       {

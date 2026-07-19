@@ -1,16 +1,55 @@
 import request from "supertest";
 import "./setup";
-import * as x402Service from "../services/x402";
+import { NextFunction, Request, Response } from "express";
+
+const mockPaymentMiddleware = jest.fn();
+const mockRegister = jest.fn().mockReturnThis();
+const mockResourceServer = jest.fn().mockReturnValue({ register: mockRegister });
+const mockExactEvmScheme = jest.fn().mockReturnValue({});
+const mockHttpFacilitatorClient = jest.fn().mockReturnValue({});
+const mockCreateCdpFacilitatorClient = jest.fn().mockReturnValue({});
+
+function MockResourceServer(...args: unknown[]) {
+  return mockResourceServer(...args);
+}
+
+function MockExactEvmScheme(...args: unknown[]) {
+  return mockExactEvmScheme(...args);
+}
+
+function MockHttpFacilitatorClient(...args: unknown[]) {
+  return mockHttpFacilitatorClient(...args);
+}
+
+function MockCreateCdpFacilitatorClient(...args: unknown[]) {
+  return mockCreateCdpFacilitatorClient(...args);
+}
+
+jest.mock("@x402/express", () => ({
+  paymentMiddleware: (...args: unknown[]) => mockPaymentMiddleware(...args),
+  x402ResourceServer: MockResourceServer,
+}));
+
+jest.mock("@x402/evm/exact/server", () => ({
+  ExactEvmScheme: MockExactEvmScheme,
+}));
+
+jest.mock("@x402/core/server", () => ({
+  HTTPFacilitatorClient: MockHttpFacilitatorClient,
+}));
+
+jest.mock("@coinbase/cdp-sdk/x402", () => ({
+  createCdpFacilitatorClient: MockCreateCdpFacilitatorClient,
+}));
 
 import app from "../app";
-
-const mockedSettleX402Request = jest.spyOn(x402Service, "settleX402Request");
 
 describe("Chess Puzzles API", () => {
   const apiKey = "test-api-key";
 
-  afterAll(() => {
-    mockedSettleX402Request.mockRestore();
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockRegister.mockReturnThis();
   });
 
   describe("Landing page", () => {
@@ -20,14 +59,15 @@ describe("Chess Puzzles API", () => {
       expect(response.headers["content-type"]).toContain("text/html");
       expect(response.text).toContain("Chess Puzzles");
       expect(response.text).toContain("GET /puzzles");
+      expect(response.text).toContain("llms.txt");
     });
   });
 
   describe("Authentication", () => {
-    it("returns 401 when API key is missing", async () => {
+    it("returns 402 when API key and payment are missing", async () => {
       const response = await request(app).get("/puzzles?count=1");
-      expect(response.status).toBe(401);
-      expect(response.body.error).toContain("API key required");
+      expect(response.status).toBe(402);
+      expect(response.body.error).toContain("Payment required");
     });
 
     it("returns 403 when API key is invalid", async () => {
@@ -51,93 +91,18 @@ describe("Chess Puzzles API", () => {
         .set("Authorization", `Bearer ${apiKey}`);
       expect(response.status).toBe(200);
     });
-  });
 
-  describe("x402 endpoint", () => {
-    beforeEach(() => {
-      mockedSettleX402Request.mockReset();
-    });
-
-    it("returns 402 when request has no API key and no payment", async () => {
-      mockedSettleX402Request.mockResolvedValue({
-        status: 402,
-        responseHeaders: {
-          "x-payment-required": "true",
-        },
-        responseBody: {
-          error: "Payment required",
-        },
-      });
-
-      const response = await request(app).get("/puzzles/x402?count=1");
-
-      expect(response.status).toBe(402);
-      expect(response.headers["x-payment-required"]).toBe("true");
-      expect(response.body.error).toContain("Payment required");
-      expect(mockedSettleX402Request).toHaveBeenCalledTimes(1);
-    });
-
-    it("allows valid API key without payment on /puzzles/x402", async () => {
-      const response = await request(app)
-        .get("/puzzles/x402?count=1")
-        .set("x-api-key", apiKey);
-
-      expect(response.status).toBe(200);
-      expect(mockedSettleX402Request).not.toHaveBeenCalled();
-    });
-
-    it("allows successful x402 payment", async () => {
-      mockedSettleX402Request.mockResolvedValue({
-        status: 200,
-        responseHeaders: {
-          "x-payment-receipt": "settled",
-        },
-        responseBody: {
-          ok: true,
-        },
-      });
-
-      const response = await request(app).get("/puzzles/x402?count=1");
-
-      expect(response.status).toBe(200);
-      expect(response.headers["x-payment-receipt"]).toBe("settled");
-      expect(Array.isArray(response.body.puzzles)).toBe(true);
-      expect(typeof response.body.puzzles[0].cost).toBe("number");
-      expect(response.body.puzzles[0].cost).toBeGreaterThan(0);
-      expect(mockedSettleX402Request).toHaveBeenCalledTimes(1);
-    });
-
-    it("falls back to payment when API key is invalid", async () => {
-      mockedSettleX402Request.mockResolvedValue({
-        status: 200,
-        responseHeaders: {},
-        responseBody: {
-          ok: true,
-        },
+    it("accepts x-payment on /puzzles when no api key is present", async () => {
+      mockPaymentMiddleware.mockImplementation(() => (_req: Request, _res: Response, next: NextFunction) => {
+        next();
       });
 
       const response = await request(app)
-        .get("/puzzles/x402?count=1")
-        .set("x-api-key", "invalid-key");
+        .get("/puzzles?count=1")
+        .set("x-payment", "signed-payment");
 
       expect(response.status).toBe(200);
-      expect(mockedSettleX402Request).toHaveBeenCalledTimes(1);
-    });
-
-    it("returns 402 when payment settlement fails", async () => {
-      mockedSettleX402Request.mockResolvedValue({
-        status: 402,
-        responseHeaders: {},
-        responseBody: {
-          error: "Payment verification failed",
-        },
-      });
-
-      const response = await request(app).get("/puzzles/x402?count=1");
-
-      expect(response.status).toBe(402);
-      expect(response.body.error).toContain("Payment verification failed");
-      expect(mockedSettleX402Request).toHaveBeenCalledTimes(1);
+      expect(mockPaymentMiddleware).toHaveBeenCalledTimes(1);
     });
   });
 
