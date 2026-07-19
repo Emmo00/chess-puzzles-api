@@ -52,7 +52,7 @@ jobs:
           PGPASSWORD: testpassword
           PGDATABASE: chess_puzzles_test
           PORT: 3001
-        run: bun test
+        run: bun run test
 
       - name: Run tests with coverage
         env:

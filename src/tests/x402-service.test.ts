@@ -1,7 +1,8 @@
+import express from "express";
+import request from "supertest";
 import { NextFunction, Request, Response } from "express";
 import pool from "../db";
 import { getActiveApiKey, markApiKeyAsUsed, x402OrApiKeyMiddleware } from "../middleware/x402AndAuth";
-import "./setup";
 
 const mockPaymentMiddleware = jest.fn();
 const mockRegister = jest.fn().mockReturnThis();
@@ -43,45 +44,33 @@ jest.mock("@coinbase/cdp-sdk/x402", () => ({
   createCdpFacilitatorClient: MockCreateCdpFacilitatorClient,
 }));
 
-function createRequest(options?: {
-  query?: Record<string, unknown>;
-  headers?: Record<string, string | string[]>;
-  method?: string;
-  originalUrl?: string;
-  protocol?: string;
-  host?: string;
-}): Request & { apiKey?: string } {
-  const query = options?.query || {};
-  const headers = options?.headers || {};
-  const method = options?.method || "GET";
-  const originalUrl = options?.originalUrl || "/puzzles?count=1";
-  const protocol = options?.protocol || "http";
-  const host = options?.host || "localhost:3000";
-
-  return {
-    query,
-    headers,
-    method,
-    originalUrl,
-    protocol,
-    get: jest.fn().mockImplementation((key: string) => {
-      if (key.toLowerCase() === "host") {
-        return host;
-      }
-      return undefined;
-    }),
-  } as unknown as Request & { apiKey?: string };
-}
-
-function createResponse(): Response {
-  return {
-    status: jest.fn().mockReturnThis(),
-    json: jest.fn().mockReturnThis(),
-  } as unknown as Response;
-}
-
 describe("x402 middleware and database helpers", () => {
   const originalEnv = { ...process.env };
+  const testApp = express();
+
+  testApp.use("/puzzles", x402OrApiKeyMiddleware, (_req, res) => {
+    res.json({ ok: true });
+  });
+
+  beforeAll(async () => {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS api_keys (
+        id BIGSERIAL PRIMARY KEY,
+        api_key TEXT UNIQUE NOT NULL,
+        description TEXT,
+        is_active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+        last_used_at TIMESTAMPTZ,
+        created_by TEXT
+      )
+    `);
+
+    await pool.query("DELETE FROM api_keys WHERE api_key = $1", ["test-api-key"]);
+    await pool.query(
+      "INSERT INTO api_keys (api_key, description, is_active) VALUES ($1, $2, TRUE)",
+      ["test-api-key", "Test API Key"]
+    );
+  });
 
   beforeEach(() => {
     process.env = {
@@ -98,6 +87,10 @@ describe("x402 middleware and database helpers", () => {
 
   afterAll(() => {
     process.env = { ...originalEnv };
+  });
+
+  afterAll(async () => {
+    await pool.query("DELETE FROM api_keys WHERE api_key = $1", ["test-api-key"]);
   });
 
   it("returns the seeded active api key from the real database", async () => {
@@ -122,33 +115,22 @@ describe("x402 middleware and database helpers", () => {
   });
 
   it("allows a valid api key without invoking payment middleware", async () => {
-    const req = createRequest({
-      headers: { "x-api-key": "test-api-key" },
-      query: { count: "3" },
-    });
-    const res = createResponse();
-    const next = jest.fn();
+    const response = await request(testApp)
+      .get("/puzzles?count=3")
+      .set("x-api-key", "test-api-key");
 
-    await x402OrApiKeyMiddleware(req, res, next);
-
-    expect(next).toHaveBeenCalledTimes(1);
-    expect(req.apiKey).toBe("test-api-key");
+    expect(response.status).toBe(200);
+    expect(response.body.ok).toBe(true);
     expect(mockPaymentMiddleware).not.toHaveBeenCalled();
   });
 
   it("returns 403 for an invalid api key", async () => {
-    const req = createRequest({
-      headers: { "x-api-key": "invalid-key" },
-      query: { count: "3" },
-    });
-    const res = createResponse();
-    const next = jest.fn();
+    const response = await request(testApp)
+      .get("/puzzles?count=3")
+      .set("x-api-key", "invalid-key");
 
-    await x402OrApiKeyMiddleware(req, res, next);
-
-    expect(res.status).toHaveBeenCalledWith(403);
-    expect(res.json).toHaveBeenCalledWith({ error: "Forbidden. Invalid API key" });
-    expect(next).not.toHaveBeenCalled();
+    expect(response.status).toBe(403);
+    expect(response.body.error).toBe("Forbidden. Invalid API key");
     expect(mockPaymentMiddleware).not.toHaveBeenCalled();
   });
 
@@ -157,17 +139,12 @@ describe("x402 middleware and database helpers", () => {
     delete process.env.X402_CELO_FACILITATOR_URL;
     delete process.env.CELO_FACILITATOR_API_KEY;
 
-    const req = createRequest({ query: { count: "1" } });
-    const res = createResponse();
-    const next = jest.fn();
+    const response = await request(testApp).get("/puzzles?count=1");
 
-    await x402OrApiKeyMiddleware(req, res, next);
-
-    expect(res.status).toHaveBeenCalledWith(503);
-    expect(res.json).toHaveBeenCalledWith({
+    expect(response.status).toBe(503);
+    expect(response.body).toEqual({
       error: "x402 payment endpoint is not configured on this server",
     });
     expect(mockPaymentMiddleware).not.toHaveBeenCalled();
-    expect(next).not.toHaveBeenCalled();
   });
 });
