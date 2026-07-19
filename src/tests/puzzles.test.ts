@@ -46,10 +46,33 @@ import app from "../app";
 
 describe("Chess Puzzles API", () => {
   const apiKey = "test-api-key";
+  const originalEnv = { ...process.env };
 
   beforeEach(() => {
+    process.env = {
+      ...originalEnv,
+      X402_PAY_TO_ADDRESS: "0xPayToWallet",
+      X402_CELO_FACILITATOR_URL: "https://api.x402.celo.org",
+      CELO_FACILITATOR_API_KEY: "celo-key",
+      X402_PRICE_USD_PER_PUZZLE: "0.1",
+    };
+
     jest.clearAllMocks();
     mockRegister.mockReturnThis();
+    mockPaymentMiddleware.mockImplementation(() => (req: Request, res: Response, next: NextFunction) => {
+      const hasPayment = Boolean(req.headers["x-payment"] || req.headers["payment-signature"]);
+
+      if (hasPayment) {
+        next();
+        return;
+      }
+
+      res.status(402).json({ error: "Payment required" });
+    });
+  });
+
+  afterAll(() => {
+    process.env = { ...originalEnv };
   });
 
   describe("Landing page", () => {
@@ -93,10 +116,6 @@ describe("Chess Puzzles API", () => {
     });
 
     it("accepts x-payment on /puzzles when no api key is present", async () => {
-      mockPaymentMiddleware.mockImplementation(() => (_req: Request, _res: Response, next: NextFunction) => {
-        next();
-      });
-
       const response = await request(app)
         .get("/puzzles?count=1")
         .set("x-payment", "signed-payment");
