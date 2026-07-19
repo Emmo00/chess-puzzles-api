@@ -103,26 +103,24 @@ export const x402OrApiKeyMiddleware = async (req: Request, res: Response, next: 
             },
             {
               scheme: "exact",
+              // The Celo facilitator (x402-rs) only accepts the flat wire shape:
+              // `asset` as a string address and the EIP-712 domain in `extra`.
+              // Passing an object-form `asset` produces an `invalid_format`
+              // rejection at settlement, so declare the AssetAmount explicitly.
               price: {
-                amount: requestedPuzzleUnits * getPuzzleUnitPriceUsd() * 1e6,
-                asset: {
-                  address: "0xcEBA9300f2b948710d2653dD7B07f33A8B32118C", // Celo mainnet USDC
-                  decimals: 6,
-                  eip712: { name: "USDC", version: "2" },
-                },
+                amount: String(requestedPuzzleUnits * getPuzzleUnitPriceUsd() * 1e6),
+                asset: "0xcEBA9300f2b948710d2653dD7B07f33A8B32118C", // Celo mainnet USDC
+                extra: { name: "USDC", version: "2" },
               },
               network: "eip155:42220",
               payTo: runtimeConfig.payTo,
             },
-             {
+            {
               scheme: "exact",
               price: {
-                amount: requestedPuzzleUnits * getPuzzleUnitPriceUsd() * 1e6,
-                asset: {
-                  address: "0x48065fbbe25f71c9282ddf5e1cd6d6a887483d5e", // Celo mainnet USDT
-                  decimals: 6,
-                  eip712: { name: "Tether USD", version: "1" },
-                },
+                amount: String(requestedPuzzleUnits * getPuzzleUnitPriceUsd() * 1e6),
+                asset: "0x48065fbbe25f71c9282ddf5e1cd6d6a887483d5e", // Celo mainnet USDT
+                extra: { name: "Tether USD", version: "1" },
               },
               network: "eip155:42220",
               payTo: runtimeConfig.payTo,
