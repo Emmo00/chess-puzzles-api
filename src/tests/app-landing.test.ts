@@ -4,12 +4,13 @@ jest.mock("../middleware/x402AndAuth", () => ({
 }));
 
 import app from "../app";
+import { resolvePublicApiBaseUrl } from "../utils";
 
 describe("Landing page base URL resolution", () => {
   const originalEnv = { ...process.env };
 
   afterEach(() => {
-    process.env = { ...originalEnv };
+    process.env = { ...originalEnv, };
   });
 
   it("uses PUBLIC_API_BASE_URL when configured and strips trailing slashes", async () => {
@@ -50,15 +51,17 @@ describe("Landing page base URL resolution", () => {
   });
 
   it("serves llms.txt with the agent guide", async () => {
-    process.env.X402_PRICE_USD_PER_PUZZLE = "0.37";
+    const baseUrl = "https://api.example.com";
 
+    process.env.X402_PRICE_USD_PER_PUZZLE = "0.37";
+    process.env.PUBLIC_API_BASE_URL = baseUrl;
     const response = await request(app).get("/llms.txt");
 
     expect(response.status).toBe(200);
     expect(response.headers["content-type"]).toContain("text/plain");
     expect(response.text).toContain("Available puzzles: 3,000,000");
     expect(response.text).toContain("Current x402 price: $0.37 per puzzle");
-    expect(response.text).toContain("Use GET /puzzles for puzzle data.");
+    expect(response.text).toContain(`Use GET ${baseUrl}/puzzles for puzzle data.`);
     expect(response.text).toContain("\"puzzles\"");
   });
 });
