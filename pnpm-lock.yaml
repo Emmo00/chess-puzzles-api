@@ -11,9 +11,6 @@ importers:
       '@coinbase/cdp-sdk':
         specifier: ^1.53.0
         version: 1.53.0(@x402/core@2.18.0)(@x402/evm@2.18.0(typescript@5.9.3))(@x402/extensions@2.18.0(typescript@5.9.3))(typescript@5.9.3)
-      '@coinbase/x402':
-        specifier: ^2.1.0
-        version: 2.1.0(@x402/evm@2.18.0(typescript@5.9.3))(@x402/extensions@2.18.0(typescript@5.9.3))(typescript@5.9.3)
       '@x402/core':
         specifier: ^2.18.0
         version: 2.18.0
@@ -271,9 +268,6 @@ packages:
         optional: true
       '@x402/svm':
         optional: true
-
-  '@coinbase/x402@2.1.0':
-    resolution: {integrity: sha512-aKeM+cz//+FjzPVu/zgz7830x0KLtKarwCyxoeC71QgCn+Xcf0NhFpn3Qyw0H496y5YOuR/IQ67gP8DZ/hXFqQ==}
 
   '@cspotcode/source-map-support@0.8.1':
     resolution: {integrity: sha512-IchNf6dN4tHoMFIn/7OE8LWZ19Y6q/67Bmf6vnGREv8RSbBVb9LPJxEcnwrcwX6ixSvaiGoomAUvu4YSxXrVgw==}
@@ -2619,22 +2613,6 @@ snapshots:
       '@x402/evm': 2.18.0(typescript@5.9.3)
       '@x402/extensions': 2.18.0(typescript@5.9.3)
     transitivePeerDependencies:
-      - bufferutil
-      - debug
-      - fastestsmallesttextencoderdecoder
-      - typescript
-      - utf-8-validate
-
-  '@coinbase/x402@2.1.0(@x402/evm@2.18.0(typescript@5.9.3))(@x402/extensions@2.18.0(typescript@5.9.3))(typescript@5.9.3)':
-    dependencies:
-      '@coinbase/cdp-sdk': 1.53.0(@x402/core@2.18.0)(@x402/evm@2.18.0(typescript@5.9.3))(@x402/extensions@2.18.0(typescript@5.9.3))(typescript@5.9.3)
-      '@x402/core': 2.18.0
-      viem: 2.55.2(typescript@5.9.3)(zod@3.25.76)
-      zod: 3.25.76
-    transitivePeerDependencies:
-      - '@x402/evm'
-      - '@x402/extensions'
-      - '@x402/svm'
       - bufferutil
       - debug
       - fastestsmallesttextencoderdecoder
