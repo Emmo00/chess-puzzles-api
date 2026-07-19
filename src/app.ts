@@ -4,7 +4,9 @@ import pinoHttp from "pino-http";
 import puzzlesRouter from "./routes/puzzles";
 import logger from "./logger";
 import { x402OrApiKeyMiddleware } from "./middleware/x402AndAuth";
+import { validatePuzzleParameters } from "./middleware/puzzlesParameterValidation";
 import getLandingPageHtml from "./pages/landingPage";
+import getLlmsTxt from "./pages/llmsTxt";
 import { resolvePublicApiBaseUrl } from "./utils";
 
 const app: express.Application = express();
@@ -19,7 +21,12 @@ app.get("/", (req, res) => {
   res.type("html").send(getLandingPageHtml(baseUrl)).end();
 });
 
+app.get("/llms.txt", (req, res) => {
+  const baseUrl = resolvePublicApiBaseUrl(req);
+  res.type("text/plain").send(getLlmsTxt(baseUrl)).end();
+});
+
 // Routes
-app.use("/puzzles", x402OrApiKeyMiddleware, puzzlesRouter);
+app.use("/puzzles", validatePuzzleParameters, x402OrApiKeyMiddleware, puzzlesRouter);
 
 export default app;

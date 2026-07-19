@@ -1,3 +1,10 @@
+import { AVAILABLE_PUZZLES_LABEL } from "./siteCopy";
+import { getPuzzleUnitPriceUsd } from "../utils";
+
+function formatPuzzlePriceUsd(): string {
+    return `$${getPuzzleUnitPriceUsd().toString()}`;
+}
+
 export default function getLandingPageHtml(baseUrl: string): string {
     return `<!doctype html>
 <html lang="en">
@@ -41,6 +48,7 @@ export default function getLandingPageHtml(baseUrl: string): string {
         }
 
         .hero {
+            position: relative;
             border: var(--border);
             box-shadow: var(--card-shadow);
             background: linear-gradient(135deg, #fff 0%, #fff9db 70%);
@@ -49,6 +57,24 @@ export default function getLandingPageHtml(baseUrl: string): string {
             animation: settle 500ms ease-out forwards;
             opacity: 0;
         }
+
+        .llms-link {
+            position: absolute;
+            top: 18px;
+            right: 18px;
+            display: inline-block;
+            border: 3px solid var(--ink);
+            background: #fff;
+            color: var(--ink);
+            box-shadow: 4px 4px 0 var(--ink);
+            padding: 6px 10px;
+            font: 700 12px/1 "IBM Plex Mono", monospace;
+            letter-spacing: 0.06em;
+            text-decoration: none;
+            text-transform: uppercase;
+        }
+
+        .llms-link:hover { transform: translate(-1px, -1px); }
 
         .tag {
             display: inline-block;
@@ -72,6 +98,24 @@ export default function getLandingPageHtml(baseUrl: string): string {
             margin: 0;
             font-size: clamp(1rem, 2.2vw, 1.25rem);
             max-width: 65ch;
+        }
+
+        .hero-stats {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 18px;
+        }
+
+        .stat {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            border: 3px solid var(--ink);
+            background: #fff;
+            box-shadow: 4px 4px 0 var(--ink);
+            padding: 8px 12px;
+            font: 700 0.9rem/1.2 "IBM Plex Mono", monospace;
         }
 
         .grid {
@@ -160,16 +204,21 @@ export default function getLandingPageHtml(baseUrl: string): string {
 <body>
     <main class="wrap">
         <section class="hero">
+            <a class="llms-link" href="/llms.txt">llms.txt</a>
             <span class="tag">Chess Data API</span>
             <h1>Chess Puzzles</h1>
-            <p>Query puzzles by ID, random count, rating range, themes, and player-move depth. Access with API keys or pay-per-use over x402 on Celo stablecoins.</p>
+            <p>Query puzzles by ID, random count, rating range, themes, and player-move depth. Access is through /puzzles with API keys or pay-per-use x402 on Base and Celo.</p>
+            <div class="hero-stats">
+                <div class="stat">${AVAILABLE_PUZZLES_LABEL} puzzles available</div>
+                <div class="stat">/puzzles supports API key or x402</div>
+                <div class="stat">x402 price ${formatPuzzlePriceUsd()} per puzzle</div>
+            </div>
         </section>
 
         <section class="grid">
             <article class="card api">
                 <h2>Base Endpoints</h2>
-                <p><code>GET /puzzles</code> (API key required)</p>
-                <p><code>GET /puzzles/x402</code> (API key or x402 payment)</p>
+                <p><code>GET /puzzles</code> (API key or x402 payment)</p>
                 <div>
                     <span class="pill">x-api-key: your-key</span>
                     <span class="pill">Authorization: Bearer your-key</span>
@@ -178,11 +227,12 @@ export default function getLandingPageHtml(baseUrl: string): string {
                 </div>
                 <h2 style="margin-top:16px;">Access Modes</h2>
                 <ul>
-                    <li><strong>API key mode</strong>: use <code>GET /puzzles</code> for existing key-based flows.</li>
-                    <li><strong>x402 mode</strong>: use <code>GET /puzzles/x402</code> and pay a dynamic total based on <code>count × X402_PRICE_USD_PER_PUZZLE</code>.</li>
+                    <li><strong>API key mode</strong>: use <code>GET /puzzles</code> with either key header.</li>
+                    <li><strong>x402 mode</strong>: use <code>GET /puzzles</code> and pay a dynamic total based on <code>count × ${formatPuzzlePriceUsd()}</code> per puzzle.</li>
+                    <li>Supported networks: <code>Base</code> and <code>Celo</code>.</li>
                     <li>Supported stablecoins: <code>USDC</code>, <code>USDT</code>, <code>USDm</code>.</li>
                     <li>Each puzzle object includes a <code>cost</code> field (USD per puzzle unit).</li>
-                    <li>Clients can send API key on <code>/puzzles/x402</code> to skip payment.</li>
+                    <li>Clients can send API key on <code>/puzzles</code> to skip payment.</li>
                 </ul>
                 <h2 style="margin-top:16px;">Query Parameters</h2>
                 <ul>
@@ -199,9 +249,8 @@ export default function getLandingPageHtml(baseUrl: string): string {
                 <h2>Example Requests</h2>
                 <pre>curl -H "x-api-key: your-key" \
     "${baseUrl}/puzzles?count=5"</pre>
-                <pre>curl "${baseUrl}/puzzles/x402?count=5"</pre>
                 <pre>curl -H "x-payment: &lt;signed-payment&gt;" \
-    "${baseUrl}/puzzles/x402?count=5"</pre>
+    "${baseUrl}/puzzles?count=5"</pre>
                 <pre>curl -H "x-api-key: your-key" \
     "${baseUrl}/puzzles?id=00sHx"</pre>
                 <pre>curl -H "x-api-key: your-key" \
@@ -209,7 +258,7 @@ export default function getLandingPageHtml(baseUrl: string): string {
             </article>
         </section>
 
-        <p class="footer">Tip: /puzzles keeps strict API-key auth. /puzzles/x402 calculates payment dynamically from requested puzzle count.</p>
+        <p class="footer">Tip: /puzzles accepts either an API key or x402 payment. The price is calculated dynamically from the requested puzzle count.</p>
     </main>
 </body>
 </html>`;

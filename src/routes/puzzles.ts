@@ -4,7 +4,7 @@ import { Puzzle, PuzzleRow, PuzzleResponse } from "../types";
 import logger from "../logger";
 import { getPuzzleUnitPriceUsd, parseRange } from "../utils";
 
-const router = Router();
+const router: Router = Router();
 
 function transformPuzzle(row: PuzzleRow, puzzleCostUsd: number): Puzzle {
   const movesValue = row.moves_json;
