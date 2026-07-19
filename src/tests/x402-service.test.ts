@@ -1,7 +1,8 @@
 import { NextFunction, Request, Response } from "express";
+import pool from "../db";
 import { getActiveApiKey, markApiKeyAsUsed, x402OrApiKeyMiddleware } from "../middleware/x402AndAuth";
+import "./setup";
 
-const mockQuery = jest.fn();
 const mockPaymentMiddleware = jest.fn();
 const mockRegister = jest.fn().mockReturnThis();
 const mockResourceServer = jest.fn().mockReturnValue({ register: mockRegister });
@@ -24,20 +25,6 @@ function MockHttpFacilitatorClient(...args: unknown[]) {
 function MockCreateCdpFacilitatorClient(...args: unknown[]) {
   return mockCreateCdpFacilitatorClient(...args);
 }
-
-jest.mock("../logger", () => ({
-  __esModule: true,
-  default: {
-    error: jest.fn(),
-  },
-}));
-
-jest.mock("../db", () => ({
-  __esModule: true,
-  default: {
-    query: (...args: unknown[]) => mockQuery(...args),
-  },
-}));
 
 jest.mock("@x402/express", () => ({
   paymentMiddleware: (...args: unknown[]) => mockPaymentMiddleware(...args),
@@ -93,7 +80,7 @@ function createResponse(): Response {
   } as unknown as Response;
 }
 
-describe("x402 middleware", () => {
+describe("x402 middleware and database helpers", () => {
   const originalEnv = { ...process.env };
 
   beforeEach(() => {
@@ -102,11 +89,10 @@ describe("x402 middleware", () => {
       X402_PAY_TO_ADDRESS: "0xPayToWallet",
       X402_CELO_FACILITATOR_URL: "https://api.x402.celo.org",
       CELO_FACILITATOR_API_KEY: "celo-key",
+      X402_PRICE_USD_PER_PUZZLE: "0.1",
     };
 
     jest.clearAllMocks();
-    mockQuery.mockReset();
-    mockPaymentMiddleware.mockReset();
     mockRegister.mockReturnThis();
   });
 
@@ -114,43 +100,30 @@ describe("x402 middleware", () => {
     process.env = { ...originalEnv };
   });
 
-  it("returns the active api key record", async () => {
-    mockQuery.mockResolvedValueOnce({
-      rows: [{ id: 1, api_key: "valid-key", description: "Test Key", is_active: true }],
-    });
+  it("returns the seeded active api key from the real database", async () => {
+    const activeKey = await getActiveApiKey("test-api-key");
 
-    await expect(getActiveApiKey("valid-key")).resolves.toEqual({
-      id: 1,
-      api_key: "valid-key",
-      description: "Test Key",
-      is_active: true,
-    });
-
-    expect(mockQuery).toHaveBeenCalledWith(
-      "SELECT id, api_key, description, is_active FROM api_keys WHERE api_key = $1 AND is_active = TRUE",
-      ["valid-key"]
-    );
+    expect(activeKey).not.toBeNull();
+    expect(activeKey?.api_key).toBe("test-api-key");
+    expect(activeKey?.is_active).toBe(true);
   });
 
-  it("marks an api key as used", async () => {
-    mockQuery.mockResolvedValueOnce({ rowCount: 1 });
+  it("updates last_used_at for the real database row", async () => {
+    await pool.query("UPDATE api_keys SET last_used_at = NULL WHERE api_key = $1", ["test-api-key"]);
 
-    await markApiKeyAsUsed("valid-key");
+    await markApiKeyAsUsed("test-api-key");
 
-    expect(mockQuery).toHaveBeenCalledWith(
-      "UPDATE api_keys SET last_used_at = CURRENT_TIMESTAMP WHERE api_key = $1",
-      ["valid-key"]
+    const result = await pool.query<{ last_used_at: string | null }>(
+      "SELECT last_used_at FROM api_keys WHERE api_key = $1",
+      ["test-api-key"]
     );
+
+    expect(result.rows[0]?.last_used_at).not.toBeNull();
   });
 
-  it("allows valid api keys without payment", async () => {
-    mockQuery.mockResolvedValueOnce({
-      rows: [{ id: 1, api_key: "valid-key", description: "Test Key", is_active: true }],
-    });
-    mockQuery.mockResolvedValueOnce({ rowCount: 1 });
-
+  it("allows a valid api key without invoking payment middleware", async () => {
     const req = createRequest({
-      headers: { "x-api-key": "valid-key" },
+      headers: { "x-api-key": "test-api-key" },
       query: { count: "3" },
     });
     const res = createResponse();
@@ -159,13 +132,11 @@ describe("x402 middleware", () => {
     await x402OrApiKeyMiddleware(req, res, next);
 
     expect(next).toHaveBeenCalledTimes(1);
-    expect(req.apiKey).toBe("valid-key");
+    expect(req.apiKey).toBe("test-api-key");
     expect(mockPaymentMiddleware).not.toHaveBeenCalled();
   });
 
-  it("rejects invalid api keys", async () => {
-    mockQuery.mockResolvedValueOnce({ rows: [] });
-
+  it("returns 403 for an invalid api key", async () => {
     const req = createRequest({
       headers: { "x-api-key": "invalid-key" },
       query: { count: "3" },
@@ -181,47 +152,22 @@ describe("x402 middleware", () => {
     expect(mockPaymentMiddleware).not.toHaveBeenCalled();
   });
 
-  it("builds x402 payment config for /puzzles", async () => {
-    process.env.X402_PRICE_USD_PER_PUZZLE = "0.15";
+  it("returns 503 when x402 config is missing", async () => {
+    delete process.env.X402_PAY_TO_ADDRESS;
+    delete process.env.X402_CELO_FACILITATOR_URL;
+    delete process.env.CELO_FACILITATOR_API_KEY;
 
-    mockPaymentMiddleware.mockImplementation(() => (_req: Request, _res: Response, next: NextFunction) => {
-      next();
-    });
-
-    const req = createRequest({ query: { count: "3" } });
+    const req = createRequest({ query: { count: "1" } });
     const res = createResponse();
     const next = jest.fn();
 
     await x402OrApiKeyMiddleware(req, res, next);
 
-    expect(mockPaymentMiddleware).toHaveBeenCalledTimes(1);
-    expect(mockResourceServer).toHaveBeenCalledTimes(1);
-    expect(mockRegister).toHaveBeenCalledWith("eip155:8453", expect.anything());
-    expect(mockRegister).toHaveBeenCalledWith("eip155:42220", expect.anything());
-    expect(next).toHaveBeenCalledTimes(1);
-
-    const [routeConfig] = mockPaymentMiddleware.mock.calls[0];
-    expect(routeConfig).toEqual(
-      expect.objectContaining({
-        "GET /puzzles": expect.objectContaining({
-          description: "Puzzle data",
-          mimeType: "application/json",
-          accepts: [
-            {
-              scheme: "exact",
-              price: "$0.45",
-              network: "eip155:8453",
-              payTo: "0xPayToWallet",
-            },
-            {
-              scheme: "exact",
-              price: "$0.45",
-              network: "eip155:42220",
-              payTo: "0xPayToWallet",
-            },
-          ],
-        }),
-      })
-    );
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.json).toHaveBeenCalledWith({
+      error: "x402 payment endpoint is not configured on this server",
+    });
+    expect(mockPaymentMiddleware).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
   });
 });

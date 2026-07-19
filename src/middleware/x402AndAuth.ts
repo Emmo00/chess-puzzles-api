@@ -8,34 +8,39 @@ import pool from "../db";
 import { extractApiKeyFromRequest, getPuzzleUnitPriceUsd, getRequestedPuzzleUnits } from "../utils";
 import type { ApiKeyRow } from "../types";
 
-const PAY_TO = process.env.X402_PAY_TO_ADDRESS || "";
+function getX402RuntimeConfig(): {
+  payTo: string;
+  celoFacilitatorClient: InstanceType<typeof HTTPFacilitatorClient>;
+  baseFacilitatorClient: ReturnType<typeof createCdpFacilitatorClient>;
+} | null {
+  const payTo = process.env.X402_PAY_TO_ADDRESS || "";
+  const celoFacilitatorUrl = process.env.X402_CELO_FACILITATOR_URL;
+  const celoFacilitatorApiKey = process.env.CELO_FACILITATOR_API_KEY;
 
-if (!PAY_TO) {
-  logger.error("X402_PAY_TO_ADDRESS is not set. Please set it in your environment variables.");
-  process.exit(1);
+  if (!payTo || !celoFacilitatorUrl || !celoFacilitatorApiKey) {
+    return null;
+  }
+
+  const celoFacilitatorClient = new HTTPFacilitatorClient({
+    url: celoFacilitatorUrl,
+    async createAuthHeaders() {
+      const headers = { "X-API-Key": celoFacilitatorApiKey };
+      return {
+        verify: headers,
+        settle: headers,
+        supported: headers,
+      };
+    },
+  });
+
+  const baseFacilitatorClient = createCdpFacilitatorClient();
+
+  return {
+    payTo,
+    celoFacilitatorClient,
+    baseFacilitatorClient,
+  };
 }
-
-const CELO_FACILITATOR_URL = process.env.X402_CELO_FACILITATOR_URL;
-const CELO_FACILITATOR_API_KEY = process.env.CELO_FACILITATOR_API_KEY;
-
-if (!CELO_FACILITATOR_URL || !CELO_FACILITATOR_API_KEY) {
-  logger.error("Facilitator URLs or API key are not set. Please set them in your environment variables.");
-  process.exit(1);
-}
-
-const celoFacilitatorClient = new HTTPFacilitatorClient({
-  url: CELO_FACILITATOR_URL,
-  async createAuthHeaders() {
-    const headers = { "X-API-Key": CELO_FACILITATOR_API_KEY };
-    return {
-      verify: headers,
-      settle: headers,
-      supported: headers,
-    };
-  },
-});
-
-const baseFacilitatorClient = createCdpFacilitatorClient();
 
 export async function getActiveApiKey(apiKey: string): Promise<ApiKeyRow | null> {
   const result = await pool.query<ApiKeyRow>(
@@ -77,6 +82,12 @@ export const x402OrApiKeyMiddleware = async (req: Request, res: Response, next: 
       return;
     }
 
+    const runtimeConfig = getX402RuntimeConfig();
+    if (!runtimeConfig) {
+      res.status(503).json({ error: "x402 payment endpoint is not configured on this server" });
+      return;
+    }
+
     const requestedPuzzleUnits = getRequestedPuzzleUnits(req) ?? 1;
     const PRICE = formatUsdAmount(getPuzzleUnitPriceUsd() * requestedPuzzleUnits);
 
@@ -88,20 +99,20 @@ export const x402OrApiKeyMiddleware = async (req: Request, res: Response, next: 
               scheme: "exact",
               price: PRICE,
               network: "eip155:8453",
-              payTo: PAY_TO,
+              payTo: runtimeConfig.payTo,
             },
             {
               scheme: "exact",
               price: PRICE,
               network: "eip155:42220",
-              payTo: PAY_TO,
+              payTo: runtimeConfig.payTo,
             },
           ],
           description: "Puzzle data",
           mimeType: "application/json",
         },
       },
-      new x402ResourceServer([baseFacilitatorClient, celoFacilitatorClient])
+      new x402ResourceServer([runtimeConfig.baseFacilitatorClient, runtimeConfig.celoFacilitatorClient])
         .register("eip155:8453", new ExactEvmScheme())
         .register("eip155:42220", new ExactEvmScheme()),
     )(req, res, next);
