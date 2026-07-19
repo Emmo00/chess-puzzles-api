@@ -7,7 +7,7 @@ Built with Bun, TypeScript, Express, and PostgreSQL.
 ## What It Supports
 
 - API-key protected access to puzzle endpoints
-- Pay-per-use access with x402 on Celo stablecoins
+- Pay-per-use access with x402 on Base and Celo stablecoins
 - Fetch a single puzzle by id
 - Fetch random puzzle sets by count (clamped to 1-100)
 - Filter by rating (exact or range)
@@ -38,38 +38,7 @@ bun install
 cp .env.example .env
 ```
 
-Update `.env` with your PostgreSQL credentials.
-
-Recommended variables (native PostgreSQL names):
-
-```env
-PGHOST=localhost
-PGPORT=5432
-PGUSER=postgres
-PGPASSWORD=postgres
-PGDATABASE=chess_puzzles
-PORT=3000
-LOG_LEVEL=info
-PUBLIC_API_BASE_URL=https://api.yourdomain.com
-```
-
-Notes:
-
-- The app also accepts legacy `DB_*` names (`DB_HOST`, `DB_PORT`, etc.).
-- If `PGPORT` is unset and `DB_PORT=3306`, the code falls back to `5432`.
-
-For x402 pay-per-use on Celo, also set:
-
-```env
-X402_ENABLED=true
-X402_NETWORK=celo
-X402_PRICE_USD_PER_PUZZLE=0.01
-# Optional legacy fallback if per-puzzle variable is unset
-X402_PRICE_USD=0.01
-X402_PAY_TO_ADDRESS=0xYourPayoutWallet
-X402_ACCEPTED_TOKENS=USDC,USDT,USDm
-THIRDWEB_SECRET_KEY=your_thirdweb_secret_key
-```
+Update `.env` with your PostgreSQL and x402 credentials.
 
 ### 3. Initialize database schema
 
@@ -111,21 +80,24 @@ Docs and landing page examples use `PUBLIC_API_BASE_URL`.
 
 `GET /` is public (landing page).
 
-`GET /puzzles` requires an API key using one of:
+`GET /puzzles` accepts either an API key or x402 payment.
+
+API key auth uses one of:
 
 - `x-api-key: <your-key>`
 - `Authorization: Bearer <your-key>`
 
-`GET /puzzles/x402` supports either:
+If you do not send an API key, `GET /puzzles` uses x402 payment headers instead:
 
-- A valid API key (same headers as above), or
-- x402 payment headers (`X-PAYMENT` or `PAYMENT-SIGNATURE`)
+- `X-PAYMENT` or `PAYMENT-SIGNATURE`
 
 Pay-per-use settings:
 
-- Network: Celo mainnet
+- Networks: Base mainnet and Celo mainnet
 - Price model: dynamic per request using `count × X402_PRICE_USD_PER_PUZZLE` (or `1` when `id` is used)
 - Supported stablecoins: `USDC`, `USDT`, `USDm`
+
+`GET /llms.txt` serves an agent guide with the auth flow and response shape.
 
 ## API Endpoints
 
@@ -137,9 +109,13 @@ Public landing page with usage information.
 
 Returns puzzles that match filters.
 
-### GET /puzzles/x402
+### GET /llms.txt
 
-Returns puzzles that match the same filters as `GET /puzzles`, but uses pay-per-use x402 when API key is not provided.
+Plain-text agent guide for using `GET /puzzles` and understanding the response shape.
+
+### GET /puzzles
+
+Returns puzzles that match the filters below. Use an API key or x402 payment.
 
 This endpoint returns `402 Payment Required` when no valid API key or payment proof is included.
 
@@ -184,21 +160,21 @@ curl -H "x-api-key: dev-local-key" \
 Pay-per-use flow (first call returns `402` challenge):
 
 ```bash
-curl "$PUBLIC_API_BASE_URL/puzzles/x402?count=10"
+curl "$PUBLIC_API_BASE_URL/puzzles?count=10"
 ```
 
 Pay-per-use flow with signed payment data:
 
 ```bash
 curl -H "X-PAYMENT: <signed-payment-data>" \
-  "$PUBLIC_API_BASE_URL/puzzles/x402?count=10"
+  "$PUBLIC_API_BASE_URL/puzzles?count=10"
 ```
 
-API key still works on x402 endpoint:
+API key still works on the same endpoint:
 
 ```bash
 curl -H "x-api-key: dev-local-key" \
-  "$PUBLIC_API_BASE_URL/puzzles/x402?count=10"
+  "$PUBLIC_API_BASE_URL/puzzles?count=10"
 ```
 
 Get with rating + themes + playerMoves:
@@ -237,7 +213,7 @@ Common errors:
 - `403 Forbidden`
   - Invalid or inactive API key on `GET /puzzles`
 - `402 Payment Required`
-  - Missing/invalid payment proof on `GET /puzzles/x402` when no valid API key is provided
+  - Missing/invalid payment proof on `GET /puzzles` when no valid API key is provided
 - `400 Bad Request`
   - Missing both `id` and `count`
   - Unknown puzzle id
@@ -294,30 +270,6 @@ Required deploy secrets:
 - `SSH_HOST`
 - `SSH_USERNAME`
 - `SSH_PRIVATE_KEY`
-
-## Project Structure
-
-```text
-src/
-  app.ts                # Express app + landing page + middleware setup
-  index.ts              # Server bootstrap
-  db.ts                 # PostgreSQL pool setup
-  services/
-    x402.ts             # x402 payment settlement wrapper
-  middleware/
-    auth.ts             # API key validation middleware
-    x402.ts             # API key OR x402 middleware for /puzzles/x402
-  routes/
-    puzzles.ts          # /puzzles endpoint logic
-  tests/
-    setup.ts            # Test DB setup + seed data
-    puzzles.test.ts     # Integration tests
-
-init_db.ts              # DB/schema bootstrap script
-import_puzzles.ts       # CSV import pipeline
-seed_api_keys.ts        # API key seeding script
-DOCUMENTATION.md        # Extended endpoint documentation
-```
 
 ## License
 

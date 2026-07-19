@@ -73,7 +73,7 @@ export const x402OrApiKeyMiddleware = async (req: Request, res: Response, next: 
 
     paymentMiddleware(
       {
-        "GET /weather": {
+        "GET /puzzles": {
           accepts: [
             {
               scheme: "exact",
