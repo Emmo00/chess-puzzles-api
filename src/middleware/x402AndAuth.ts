@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import { paymentMiddleware, x402ResourceServer } from "@x402/express";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
 import { HTTPFacilitatorClient } from "@x402/core/server";
-import { createCdpFacilitatorClient} from "@coinbase/cdp-sdk/x402";
+import { createCdpFacilitatorClient } from "@coinbase/cdp-sdk/x402";
 import logger from "../logger";
 import pool from "../db";
 import { extractApiKeyFromRequest, getPuzzleUnitPriceUsd, getRequestedPuzzleUnits } from "../utils";
@@ -103,7 +103,27 @@ export const x402OrApiKeyMiddleware = async (req: Request, res: Response, next: 
             },
             {
               scheme: "exact",
-              price: PRICE,
+              price: {
+                amount: requestedPuzzleUnits * getPuzzleUnitPriceUsd() * 1e6,
+                asset: {
+                  address: "0xcEBA9300f2b948710d2653dD7B07f33A8B32118C", // Celo mainnet USDC
+                  decimals: 6,
+                  eip712: { name: "USDC", version: "2" },
+                },
+              },
+              network: "eip155:42220",
+              payTo: runtimeConfig.payTo,
+            },
+             {
+              scheme: "exact",
+              price: {
+                amount: requestedPuzzleUnits * getPuzzleUnitPriceUsd() * 1e6,
+                asset: {
+                  address: "0x48065fbbe25f71c9282ddf5e1cd6d6a887483d5e", // Celo mainnet USDT
+                  decimals: 6,
+                  eip712: { name: "Tether USD", version: "1" },
+                },
+              },
               network: "eip155:42220",
               payTo: runtimeConfig.payTo,
             },
