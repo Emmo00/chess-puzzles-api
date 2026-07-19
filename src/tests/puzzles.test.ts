@@ -251,7 +251,7 @@ describe("Chess Puzzles API", () => {
         .set("x-api-key", apiKey);
 
       expect(response.status).toBe(400);
-      expect(response.body.error).toContain("Invalid themes format");
+      expect(response.body.error).toContain("valid JSON array");
     });
 
     it("returns 400 when themesType missing for multiple themes", async () => {

@@ -541,7 +541,6 @@ afterAll(async () => {
         throw error;
       }
     }
-    await pool.end();
     console.log("Database cleanup complete");
   } catch (error) {
     console.error("Database cleanup failed:", error);
