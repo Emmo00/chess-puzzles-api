@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "skills": {
+    "x402-celo-payment": {
+      "source": "emmo00/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/x402-celo-payment/SKILL.md",
+      "computedHash": "52db40bec1bebba16596556f144f10b4b7936fe57759d959f8005d64464ed08e"
+    },
+    "x402-celo-server": {
+      "source": "emmo00/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/x402-celo-server/SKILL.md",
+      "computedHash": "352a3a4b483136d7ebe24e1d3f32e2d1b765c65bff44ee6bce10621403852705"
+    }
+  }
+}
